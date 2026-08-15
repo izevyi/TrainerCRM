@@ -5,6 +5,8 @@ import { useState } from "react";
 type Client = {
   id: number;
   name: string;
+  weight: number;
+  startWeight: number;
 };
 
 type Training = {
@@ -14,18 +16,63 @@ type Training = {
   date: string;
   time: string;
   type: string;
+  completed: boolean;
+};
+
+type ExerciseSet = {
+  id: number;
+  weight: number;
+  reps: number;
+};
+
+type Exercise = {
+  id: number;
+  name: string;
+  sets: ExerciseSet[];
+};
+
+type WeightPoint = {
+  date: string;
+  weight: number;
 };
 
 const clients: Client[] = [
-  { id: 1, name: "Анна Петрова" },
-  { id: 2, name: "Сергей Иванов" },
-  { id: 3, name: "Мария Смирнова" },
-  { id: 4, name: "Алексей Волков" },
-  { id: 5, name: "Елена Кузнецова" },
-  { id: 6, name: "Дмитрий Орлов" },
-  { id: 7, name: "Ольга Морозова" },
-  { id: 8, name: "Иван Соколов" },
+  { id: 1, name: "Анна Петрова", weight: 72.4, startWeight: 76 },
+  { id: 2, name: "Сергей Иванов", weight: 91.2, startWeight: 94 },
+  { id: 3, name: "Мария Смирнова", weight: 64.8, startWeight: 67.5 },
+  { id: 4, name: "Алексей Волков", weight: 83.6, startWeight: 83.6 },
+  { id: 5, name: "Елена Кузнецова", weight: 58.9, startWeight: 61 },
+  { id: 6, name: "Дмитрий Орлов", weight: 97.3, startWeight: 99 },
+  { id: 7, name: "Ольга Морозова", weight: 69.7, startWeight: 72 },
+  { id: 8, name: "Иван Соколов", weight: 88.5, startWeight: 88.5 },
 ];
+
+const initialTrainingExercises: Record<number, Exercise[]> = {
+  1: [
+    { id: 1, name: "Приседания", sets: [{ id: 1, weight: 40, reps: 12 }, { id: 2, weight: 45, reps: 10 }, { id: 3, weight: 45, reps: 10 }] },
+    { id: 2, name: "Жим ногами", sets: [{ id: 1, weight: 80, reps: 12 }, { id: 2, weight: 90, reps: 10 }] },
+    { id: 3, name: "Тяга верхнего блока", sets: [{ id: 1, weight: 35, reps: 12 }, { id: 2, weight: 40, reps: 10 }] },
+  ],
+  9: [
+    { id: 1, name: "Приседания", sets: [{ id: 1, weight: 45, reps: 10 }, { id: 2, weight: 47.5, reps: 10 }, { id: 3, weight: 50, reps: 8 }] },
+    { id: 2, name: "Жим ногами", sets: [{ id: 1, weight: 90, reps: 10 }, { id: 2, weight: 95, reps: 10 }] },
+    { id: 3, name: "Тяга верхнего блока", sets: [{ id: 1, weight: 40, reps: 10 }, { id: 2, weight: 45, reps: 10 }] },
+  ],
+};
+
+const clientWeightHistory: Record<number, WeightPoint[]> = {
+  1: [
+    { date: "2026-07-18", weight: 76 },
+    { date: "2026-07-25", weight: 74.8 },
+    { date: "2026-08-01", weight: 73.6 },
+    { date: "2026-08-11", weight: 72.4 },
+  ],
+  2: [
+    { date: "2026-07-20", weight: 94 },
+    { date: "2026-08-03", weight: 92.5 },
+    { date: "2026-08-11", weight: 91.2 },
+  ],
+};
 
 const initialTrainings: Training[] = [
   {
@@ -35,6 +82,7 @@ const initialTrainings: Training[] = [
     date: "2026-08-11",
     time: "09:00",
     type: "Персональная тренировка",
+    completed: true,
   },
   {
     id: 2,
@@ -43,6 +91,7 @@ const initialTrainings: Training[] = [
     date: "2026-08-11",
     time: "11:00",
     type: "Персональная тренировка",
+    completed: true,
   },
   {
     id: 3,
@@ -51,6 +100,7 @@ const initialTrainings: Training[] = [
     date: "2026-08-13",
     time: "09:00",
     type: "Персональная тренировка",
+    completed: true,
   },
   {
     id: 4,
@@ -59,6 +109,7 @@ const initialTrainings: Training[] = [
     date: "2026-08-13",
     time: "09:00",
     type: "Персональная тренировка",
+    completed: true,
   },
   {
     id: 5,
@@ -67,6 +118,7 @@ const initialTrainings: Training[] = [
     date: "2026-08-13",
     time: "09:00",
     type: "Персональная тренировка",
+    completed: true,
   },
   {
     id: 6,
@@ -75,6 +127,7 @@ const initialTrainings: Training[] = [
     date: "2026-08-13",
     time: "18:00",
     type: "Персональная тренировка",
+    completed: true,
   },
   {
     id: 7,
@@ -83,6 +136,7 @@ const initialTrainings: Training[] = [
     date: "2026-08-15",
     time: "10:00",
     type: "Персональная тренировка",
+    completed: true,
   },
   {
     id: 8,
@@ -91,6 +145,7 @@ const initialTrainings: Training[] = [
     date: "2026-08-15",
     time: "12:00",
     type: "Персональная тренировка",
+    completed: true,
   },
   {
     id: 9,
@@ -99,6 +154,7 @@ const initialTrainings: Training[] = [
     date: "2026-08-18",
     time: "09:00",
     type: "Персональная тренировка",
+    completed: false,
   },
   {
     id: 10,
@@ -107,6 +163,7 @@ const initialTrainings: Training[] = [
     date: "2026-08-20",
     time: "17:00",
     type: "Персональная тренировка",
+    completed: false,
   },
 ];
 
@@ -175,6 +232,39 @@ function getTrainingWord(count: number) {
   return "тренировок";
 }
 
+function formatShortDate(value: string) {
+  const [, month, day] = value.split("-");
+  return `${day}.${month}`;
+}
+
+function getExerciseProgress(
+  clientId: number,
+  trainings: Training[],
+  trainingExercises: Record<number, Exercise[]>
+) {
+  const completed = trainings
+    .filter((training) => training.clientId === clientId && training.completed)
+    .sort((a, b) => `${a.date}${a.time}`.localeCompare(`${b.date}${b.time}`));
+
+  const byExercise = new Map<string, { first: number; last: number; date: string }>();
+
+  completed.forEach((training) => {
+    (trainingExercises[training.id] ?? []).forEach((exercise) => {
+      const maxWeight = Math.max(0, ...exercise.sets.map((set) => set.weight));
+      if (!maxWeight) return;
+      const current = byExercise.get(exercise.name);
+      if (!current) {
+        byExercise.set(exercise.name, { first: maxWeight, last: maxWeight, date: training.date });
+      } else {
+        current.last = maxWeight;
+        current.date = training.date;
+      }
+    });
+  });
+
+  return Array.from(byExercise.entries()).map(([name, values]) => ({ name, ...values }));
+}
+
 export default function Home() {
   const today = new Date();
 
@@ -189,6 +279,15 @@ export default function Home() {
 
   const [selectedTraining, setSelectedTraining] =
     useState<Training | null>(null);
+
+  const [trainingExercises, setTrainingExercises] =
+    useState<Record<number, Exercise[]>>(initialTrainingExercises);
+
+  const [selectedClient, setSelectedClient] =
+    useState<Client | null>(null);
+
+  const [clientSearch, setClientSearch] =
+    useState("");
 
   const [isAddModalOpen, setIsAddModalOpen] =
     useState(false);
@@ -217,6 +316,32 @@ export default function Home() {
       .sort((a, b) =>
         a.time.localeCompare(b.time)
       );
+
+  const filteredClients = clients.filter((client) =>
+    client.name.toLowerCase().includes(clientSearch.toLowerCase().trim())
+  );
+
+  const clientTrainings = selectedClient
+    ? trainings
+        .filter((training) => training.clientId === selectedClient.id)
+        .sort((a, b) => `${b.date}${b.time}`.localeCompare(`${a.date}${a.time}`))
+    : [];
+
+  const completedCount = clientTrainings.filter((training) => training.completed).length;
+  const weightProgress = selectedClient
+    ? selectedClient.startWeight - selectedClient.weight
+    : 0;
+
+  const selectedWeightHistory = selectedClient
+    ? clientWeightHistory[selectedClient.id] ?? [
+        { date: "2026-08-01", weight: selectedClient.startWeight },
+        { date: formatDate(new Date()), weight: selectedClient.weight },
+      ]
+    : [];
+
+  const selectedExerciseProgress = selectedClient
+    ? getExerciseProgress(selectedClient.id, trainings, trainingExercises)
+    : [];
 
   function goToPreviousMonth() {
     setCurrentMonth(
@@ -266,6 +391,7 @@ export default function Home() {
       date: selectedKey,
       time: newTime,
       type: "Персональная тренировка",
+      completed: false,
     };
 
     setTrainings((current) => [
@@ -274,6 +400,50 @@ export default function Home() {
     ]);
 
     setIsAddModalOpen(false);
+  }
+
+  function getExercisesForTraining(trainingId: number) {
+    return trainingExercises[trainingId] ?? [
+      { id: 1, name: "Новое упражнение", sets: [{ id: 1, weight: 0, reps: 0 }] },
+    ];
+  }
+
+  function updateExerciseSet(trainingId: number, exerciseId: number, setId: number, field: "weight" | "reps", value: string) {
+    const numericValue = Number(value);
+    setTrainingExercises((current) => ({
+      ...current,
+      [trainingId]: getExercisesForTraining(trainingId).map((exercise) =>
+        exercise.id === exerciseId
+          ? { ...exercise, sets: exercise.sets.map((set) => set.id === setId ? { ...set, [field]: numericValue } : set) }
+          : exercise
+      ),
+    }));
+  }
+
+  function addSet(trainingId: number, exerciseId: number) {
+    setTrainingExercises((current) => ({
+      ...current,
+      [trainingId]: getExercisesForTraining(trainingId).map((exercise) =>
+        exercise.id === exerciseId
+          ? { ...exercise, sets: [...exercise.sets, { id: Date.now(), weight: 0, reps: 0 }] }
+          : exercise
+      ),
+    }));
+  }
+
+  function addExercise(trainingId: number) {
+    setTrainingExercises((current) => ({
+      ...current,
+      [trainingId]: [
+        ...getExercisesForTraining(trainingId),
+        { id: Date.now(), name: "Новое упражнение", sets: [{ id: Date.now() + 1, weight: 0, reps: 0 }] },
+      ],
+    }));
+  }
+
+  function toggleTrainingCompleted(trainingId: number) {
+    setTrainings((current) => current.map((training) => training.id === trainingId ? { ...training, completed: !training.completed } : training));
+    setSelectedTraining((current) => current && current.id === trainingId ? { ...current, completed: !current.completed } : current);
   }
 
   function deleteTraining(id: number) {
@@ -444,6 +614,44 @@ export default function Home() {
 
           </div>
 
+        </section>
+
+        {/* CLIENTS */}
+        <section className="mt-6 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-zinc-200 sm:mt-8 sm:rounded-3xl sm:p-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-xs text-zinc-500 sm:text-sm">Быстрый доступ</p>
+              <h2 className="mt-1 text-xl font-semibold sm:text-2xl">Клиенты</h2>
+            </div>
+            <input
+              value={clientSearch}
+              onChange={(event) => setClientSearch(event.target.value)}
+              placeholder="Поиск клиента..."
+              className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-sm outline-none focus:border-zinc-400 sm:max-w-xs"
+            />
+          </div>
+
+          <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            {filteredClients.map((client) => {
+              const count = trainings.filter((training) => training.clientId === client.id).length;
+              return (
+                <button
+                  key={client.id}
+                  onClick={() => setSelectedClient(client)}
+                  className="flex items-center gap-3 rounded-2xl border border-zinc-200 p-3 text-left transition hover:bg-zinc-50 active:scale-[0.99]"
+                >
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-zinc-900 text-sm font-semibold text-white">
+                    {client.name.split(" ").map((part) => part[0]).slice(0, 2).join("")}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-semibold">{client.name}</div>
+                    <div className="mt-0.5 text-xs text-zinc-500">{count} {getTrainingWord(count)}</div>
+                  </div>
+                  <div className="text-lg text-zinc-300">→</div>
+                </button>
+              );
+            })}
+          </div>
         </section>
 
         {/* SCHEDULE HEADER */}
@@ -680,105 +888,182 @@ export default function Home() {
 
       {/* TRAINING DETAILS */}
 
+      {selectedClient && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/40 p-0 sm:p-6">
+          <div className="mx-auto min-h-full w-full bg-white sm:min-h-0 sm:max-w-3xl sm:rounded-3xl sm:shadow-2xl">
+            <div className="sticky top-0 z-10 border-b border-zinc-200 bg-white px-4 py-4 sm:rounded-t-3xl sm:px-6">
+              <div className="flex items-start justify-between">
+                <div>
+                  <p className="text-xs text-zinc-500">Карточка клиента</p>
+                  <h2 className="mt-1 text-2xl font-semibold">{selectedClient.name}</h2>
+                </div>
+                <button onClick={() => setSelectedClient(null)} className="flex h-10 w-10 items-center justify-center rounded-xl text-xl text-zinc-400">×</button>
+              </div>
+            </div>
+
+            <div className="p-4 sm:p-6">
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                <div className="rounded-2xl bg-zinc-50 p-4"><div className="text-xs text-zinc-500">Тренировок</div><div className="mt-1 text-2xl font-semibold">{clientTrainings.length}</div></div>
+                <div className="rounded-2xl bg-zinc-50 p-4"><div className="text-xs text-zinc-500">Завершено</div><div className="mt-1 text-2xl font-semibold">{completedCount}</div></div>
+                <div className="rounded-2xl bg-zinc-50 p-4"><div className="text-xs text-zinc-500">Текущий вес</div><div className="mt-1 text-2xl font-semibold">{selectedClient.weight} кг</div></div>
+                <div className="rounded-2xl bg-zinc-50 p-4"><div className="text-xs text-zinc-500">Изменение</div><div className="mt-1 text-2xl font-semibold">{weightProgress > 0 ? "-" : "+"}{Math.abs(weightProgress).toFixed(1)} кг</div></div>
+              </div>
+
+              <section className="mt-5 rounded-2xl border border-zinc-200 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-xs text-zinc-500">Прогресс веса</p>
+                    <h3 className="mt-1 font-semibold">Изменение по датам</h3>
+                  </div>
+                  <div className="text-sm font-semibold">{selectedClient.startWeight} → {selectedClient.weight} кг</div>
+                </div>
+
+                <div className="mt-4 rounded-2xl bg-zinc-50 p-3">
+                  <div className="relative h-40">
+                    <svg viewBox="0 0 640 180" className="h-full w-full" preserveAspectRatio="none" role="img" aria-label="График изменения веса">
+                      {selectedWeightHistory.length > 1 && (() => {
+                        const values = selectedWeightHistory.map((point) => point.weight);
+                        const min = Math.min(...values);
+                        const max = Math.max(...values);
+                        const range = Math.max(max - min, 1);
+                        const points = selectedWeightHistory.map((point, index) => {
+                          const x = (index / (selectedWeightHistory.length - 1)) * 600 + 20;
+                          const y = 150 - ((point.weight - min) / range) * 110;
+                          return `${x},${y}`;
+                        }).join(" ");
+                        return (
+                          <>
+                            <line x1="20" y1="150" x2="620" y2="150" stroke="currentColor" className="text-zinc-200" />
+                            <polyline fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" className="text-zinc-900" points={points} />
+                            {selectedWeightHistory.map((point, index) => {
+                              const x = (index / (selectedWeightHistory.length - 1)) * 600 + 20;
+                              const y = 150 - ((point.weight - min) / range) * 110;
+                              return <circle key={`${point.date}-${index}`} cx={x} cy={y} r="5" fill="currentColor" className="text-zinc-900" />;
+                            })}
+                          </>
+                        );
+                      })()}
+                    </svg>
+                  </div>
+                  <div className="mt-2 flex justify-between gap-2 text-[10px] text-zinc-400">
+                    {selectedWeightHistory.map((point) => <span key={point.date}>{formatShortDate(point.date)}</span>)}
+                  </div>
+                </div>
+
+                <div className="mt-4 space-y-2">
+                  {selectedWeightHistory.map((point) => (
+                    <div key={point.date} className="flex items-center justify-between rounded-xl border border-zinc-100 px-3 py-2 text-sm">
+                      <span className="text-zinc-500">{formatShortDate(point.date)}</span>
+                      <span className="font-semibold">{point.weight} кг</span>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
+              <section className="mt-5 rounded-2xl border border-zinc-200 p-4">
+                <div>
+                  <p className="text-xs text-zinc-500">Силовые показатели</p>
+                  <h3 className="mt-1 font-semibold">Прогресс по упражнениям</h3>
+                </div>
+                {selectedExerciseProgress.length === 0 ? (
+                  <p className="mt-4 text-sm text-zinc-500">Пока недостаточно данных для сравнения.</p>
+                ) : (
+                  <div className="mt-4 space-y-2">
+                    {selectedExerciseProgress.map((exercise) => {
+                      const delta = exercise.last - exercise.first;
+                      return (
+                        <div key={exercise.name} className="rounded-xl bg-zinc-50 p-3">
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="text-sm font-medium">{exercise.name}</span>
+                            <span className={`text-sm font-semibold ${delta > 0 ? "text-emerald-600" : delta < 0 ? "text-red-600" : "text-zinc-500"}`}>
+                              {delta > 0 ? "+" : ""}{delta.toFixed(1)} кг
+                            </span>
+                          </div>
+                          <div className="mt-1 text-xs text-zinc-500">
+                            {exercise.first} → {exercise.last} кг · последний раз {formatShortDate(exercise.date)}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </section>
+
+              <section className="mt-5">
+                <p className="text-xs text-zinc-500">История</p>
+                <h3 className="mt-1 text-lg font-semibold">Тренировки клиента</h3>
+                <div className="mt-3 space-y-2">
+                  {clientTrainings.map((training) => (
+                    <button
+                      key={training.id}
+                      onClick={() => { setSelectedClient(null); setSelectedTraining(training); }}
+                      className="flex w-full items-center gap-3 rounded-2xl border border-zinc-200 p-3 text-left hover:bg-zinc-50"
+                    >
+                      <div className="w-20 shrink-0"><div className="text-sm font-semibold">{training.date.slice(8, 10)}.{training.date.slice(5, 7)}</div><div className="text-xs text-zinc-500">{training.time}</div></div>
+                      <div className="min-w-0 flex-1"><div className="truncate text-sm font-semibold">{training.type}</div><div className="text-xs text-zinc-500">Открыть тренировку</div></div>
+                      <div className="rounded-full bg-zinc-100 px-2 py-1 text-[10px] font-semibold">Открыть</div>
+                    </button>
+                  ))}
+                </div>
+              </section>
+            </div>
+          </div>
+        </div>
+      )}
+
       {selectedTraining && (
-
         <div className="fixed inset-0 z-50 flex items-end bg-black/40 sm:items-center sm:justify-center sm:px-4">
-
-          <div className="w-full rounded-t-3xl bg-white p-5 shadow-2xl sm:max-w-md sm:rounded-3xl sm:p-6">
-
+          <div className="max-h-[92vh] w-full overflow-y-auto rounded-t-3xl bg-white p-5 shadow-2xl sm:max-w-3xl sm:rounded-3xl sm:p-6">
             <div className="flex items-start justify-between">
-
               <div>
-
-                <p className="text-xs text-zinc-500">
-                  Тренировка
-                </p>
-
-                <h2 className="mt-1 text-xl font-semibold">
-                  {selectedTraining.clientName}
-                </h2>
-
+                <p className="text-xs text-zinc-500">Тренировка</p>
+                <h2 className="mt-1 text-xl font-semibold">{selectedTraining.clientName}</h2>
+                <p className="mt-1 text-sm text-zinc-500">{selectedTraining.date} · {selectedTraining.time}</p>
               </div>
+              <button onClick={() => setSelectedTraining(null)} className="flex h-10 w-10 items-center justify-center rounded-xl text-xl text-zinc-400 active:bg-zinc-100">×</button>
+            </div>
 
-              <button
-                onClick={() =>
-                  setSelectedTraining(null)
-                }
-                className="flex h-10 w-10 items-center justify-center rounded-xl text-xl text-zinc-400 active:bg-zinc-100"
-              >
-                ×
+            <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className={`inline-flex w-fit items-center rounded-full px-3 py-1.5 text-xs font-semibold ${selectedTraining.completed ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
+                {selectedTraining.completed ? "✓ Тренировка завершена" : "○ Тренировка не завершена"}
+              </div>
+              <button onClick={() => toggleTrainingCompleted(selectedTraining.id)} className="rounded-xl bg-zinc-900 px-4 py-2.5 text-sm font-medium text-white active:bg-zinc-700">
+                {selectedTraining.completed ? "Отметить как незавершённую" : "Завершить тренировку"}
               </button>
-
             </div>
 
-            <div className="mt-5 grid grid-cols-2 gap-2">
-
-              <div className="rounded-2xl bg-zinc-50 p-3">
-
-                <div className="text-[10px] text-zinc-500 sm:text-xs">
-                  Дата
-                </div>
-
-                <div className="mt-1 text-sm font-medium">
-                  {selectedTraining.date}
-                </div>
-
+            <section className="mt-5">
+              <div className="flex items-end justify-between gap-3">
+                <div><p className="text-xs text-zinc-500">Содержание</p><h3 className="mt-1 text-lg font-semibold">Упражнения и веса</h3></div>
+                <button onClick={() => addExercise(selectedTraining.id)} className="rounded-xl border border-zinc-200 px-3 py-2 text-xs font-medium hover:bg-zinc-50">+ Упражнение</button>
               </div>
 
-              <div className="rounded-2xl bg-zinc-50 p-3">
-
-                <div className="text-[10px] text-zinc-500 sm:text-xs">
-                  Время
-                </div>
-
-                <div className="mt-1 text-sm font-medium">
-                  {selectedTraining.time}
-                </div>
-
+              <div className="mt-4 space-y-3">
+                {getExercisesForTraining(selectedTraining.id).map((exercise) => (
+                  <div key={exercise.id} className="rounded-2xl border border-zinc-200 p-4">
+                    <div className="flex items-center justify-between gap-3"><div className="font-semibold">{exercise.name}</div><span className="text-xs text-zinc-400">{exercise.sets.length} {exercise.sets.length === 1 ? "подход" : exercise.sets.length < 5 ? "подхода" : "подходов"}</span></div>
+                    <div className="mt-3 grid grid-cols-[40px_1fr_1fr] gap-2 text-xs text-zinc-500"><div>№</div><div>Вес, кг</div><div>Повторы</div></div>
+                    <div className="mt-1 space-y-2">
+                      {exercise.sets.map((set, index) => (
+                        <div key={set.id} className="grid grid-cols-[40px_1fr_1fr] items-center gap-2">
+                          <div className="text-sm font-medium text-zinc-500">{index + 1}</div>
+                          <input type="number" min="0" step="0.5" value={set.weight} onChange={(event) => updateExerciseSet(selectedTraining.id, exercise.id, set.id, "weight", event.target.value)} className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-sm outline-none focus:border-zinc-400" />
+                          <input type="number" min="0" value={set.reps} onChange={(event) => updateExerciseSet(selectedTraining.id, exercise.id, set.id, "reps", event.target.value)} className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-sm outline-none focus:border-zinc-400" />
+                        </div>
+                      ))}
+                    </div>
+                    <button onClick={() => addSet(selectedTraining.id, exercise.id)} className="mt-3 text-xs font-medium text-zinc-600 hover:text-zinc-900">+ Добавить подход</button>
+                  </div>
+                ))}
               </div>
-
-            </div>
-
-            <div className="mt-2 rounded-2xl bg-zinc-50 p-3">
-
-              <div className="text-[10px] text-zinc-500 sm:text-xs">
-                Тип
-              </div>
-
-              <div className="mt-1 text-sm font-medium">
-                {selectedTraining.type}
-              </div>
-
-            </div>
+            </section>
 
             <div className="mt-6 flex gap-2">
-
-              <button
-                onClick={() =>
-                  setSelectedTraining(null)
-                }
-                className="flex-1 rounded-xl border border-zinc-200 px-3 py-3 text-sm font-medium active:bg-zinc-50"
-              >
-                Закрыть
-              </button>
-
-              <button
-                onClick={() =>
-                  deleteTraining(
-                    selectedTraining.id
-                  )
-                }
-                className="rounded-xl bg-red-50 px-4 py-3 text-sm font-medium text-red-600 active:bg-red-100"
-              >
-                Удалить
-              </button>
-
+              <button onClick={() => setSelectedTraining(null)} className="flex-1 rounded-xl border border-zinc-200 px-3 py-3 text-sm font-medium active:bg-zinc-50">Закрыть</button>
+              <button onClick={() => deleteTraining(selectedTraining.id)} className="rounded-xl bg-red-50 px-4 py-3 text-sm font-medium text-red-600 active:bg-red-100">Удалить</button>
             </div>
-
           </div>
-
         </div>
-
       )}
 
     </main>

@@ -36,7 +36,7 @@ type WeightPoint = {
   weight: number;
 };
 
-const clients: Client[] = [
+const initialClients: Client[] = [
   { id: 1, name: "Анна Петрова", weight: 72.4, startWeight: 76 },
   { id: 2, name: "Сергей Иванов", weight: 91.2, startWeight: 94 },
   { id: 3, name: "Мария Смирнова", weight: 64.8, startWeight: 67.5 },
@@ -273,6 +273,25 @@ export default function Home() {
   );
 
   const [selectedDate, setSelectedDate] = useState(today);
+  
+const [clients, setClients] = useState<Client[]>(() => {
+  if (typeof window !== "undefined") {
+    const saved = localStorage.getItem("trainercrm_clients");
+
+    if (saved) {
+      return JSON.parse(saved);
+    }
+  }
+
+  return initialClients;
+});
+
+useEffect(() => {
+  localStorage.setItem(
+    "trainercrm_clients",
+    JSON.stringify(clients)
+  );
+}, [clients]);
 
   const [trainings, setTrainings] = useState<Training[]>(() => {
   if (typeof window !== "undefined") {

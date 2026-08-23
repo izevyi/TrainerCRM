@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 type Client = {
   id: number;
@@ -274,14 +274,47 @@ export default function Home() {
 
   const [selectedDate, setSelectedDate] = useState(today);
 
-  const [trainings, setTrainings] =
-    useState<Training[]>(initialTrainings);
+  const [trainings, setTrainings] = useState<Training[]>(() => {
+  if (typeof window !== "undefined") {
+    const saved = localStorage.getItem("trainercrm_trainings");
+
+    if (saved) {
+      return JSON.parse(saved);
+    }
+  }
+
+  return initialTrainings;
+});
 
   const [selectedTraining, setSelectedTraining] =
     useState<Training | null>(null);
 
   const [trainingExercises, setTrainingExercises] =
-    useState<Record<number, Exercise[]>>(initialTrainingExercises);
+  useState<Record<number, Exercise[]>>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("trainercrm_exercises");
+
+      if (saved) {
+        return JSON.parse(saved);
+      }
+    }
+
+    return initialTrainingExercises;
+  });
+
+  useEffect(() => {
+    localStorage.setItem(
+      "trainercrm_trainings",
+      JSON.stringify(trainings)
+    );
+  }, [trainings]);
+
+  useEffect(() => {
+    localStorage.setItem(
+      "trainercrm_exercises",
+      JSON.stringify(trainingExercises)
+    );
+  }, [trainingExercises]);
 
   const [selectedClient, setSelectedClient] =
     useState<Client | null>(null);

@@ -268,42 +268,55 @@ function getExerciseProgress(
 export default function Home() {
   const today = new Date();
 
+  const [isHydrated, setIsHydrated] = useState(false);
+
+useEffect(() => {
+  setIsHydrated(true);
+}, []);
+
   const [currentMonth, setCurrentMonth] = useState(
     new Date(today.getFullYear(), today.getMonth(), 1)
   );
 
   const [selectedDate, setSelectedDate] = useState(today);
   
-const [clients, setClients] = useState<Client[]>(() => {
-  if (typeof window !== "undefined") {
-    const saved = localStorage.getItem("trainercrm_clients");
-
-    if (saved) {
-      return JSON.parse(saved);
-    }
-  }
-
-  return initialClients;
-});
+const [clients, setClients] = useState<Client[]>(initialClients);
 
 useEffect(() => {
+  const saved = localStorage.getItem("trainercrm_clients");
+
+  if (saved) {
+    setClients(JSON.parse(saved));
+  }
+}, []);
+
+useEffect(() => {
+  if (!isHydrated) return;
+
   localStorage.setItem(
     "trainercrm_clients",
     JSON.stringify(clients)
   );
-}, [clients]);
+}, [clients, isHydrated]);
 
-  const [trainings, setTrainings] = useState<Training[]>(() => {
-  if (typeof window !== "undefined") {
-    const saved = localStorage.getItem("trainercrm_trainings");
+const [trainings, setTrainings] = useState<Training[]>(initialTrainings);
 
-    if (saved) {
-      return JSON.parse(saved);
-    }
+useEffect(() => {
+  const saved = localStorage.getItem("trainercrm_trainings");
+
+  if (saved) {
+    setTrainings(JSON.parse(saved));
   }
+}, []);
 
-  return initialTrainings;
-});
+useEffect(() => {
+  if (!isHydrated) return;
+
+  localStorage.setItem(
+    "trainercrm_trainings",
+    JSON.stringify(trainings)
+  );
+}, [trainings, isHydrated]);
 
   const [selectedTraining, setSelectedTraining] =
     useState<Training | null>(null);
@@ -322,11 +335,13 @@ useEffect(() => {
   });
 
   useEffect(() => {
-    localStorage.setItem(
-      "trainercrm_trainings",
-      JSON.stringify(trainings)
-    );
-  }, [trainings]);
+  if (!isHydrated) return;
+
+  localStorage.setItem(
+    "trainercrm_trainings",
+    JSON.stringify(trainings)
+  );
+}, [trainings, isHydrated]);
 
   useEffect(() => {
     localStorage.setItem(
@@ -615,7 +630,7 @@ useEffect(() => {
                   ) === key;
 
                 const isToday =
-                  formatDate(today) === key;
+                  isHydrated && formatDate(today) === key;
 
                 return (
                   <button

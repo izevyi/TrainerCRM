@@ -911,16 +911,39 @@ useEffect(() => {
                   Время
                 </label>
 
-                <input
-                  type="time"
-                  value={newTime}
-                  onChange={(event) =>
-                    setNewTime(
-                      event.target.value
-                    )
-                  }
-                  className="mt-2 w-full rounded-xl border border-zinc-200 px-3 py-3 text-sm outline-none focus:border-zinc-500"
-                />
+                <div className="mt-2 grid grid-cols-2 gap-2">
+  <select
+    value={newTime.split(":")[0]}
+    onChange={(event) =>
+      setNewTime(`${event.target.value}:${newTime.split(":")[1] || "00"}`)
+    }
+    className="w-full rounded-xl border border-zinc-200 px-3 py-3 text-sm outline-none focus:border-zinc-500"
+  >
+    {Array.from({ length: 24 }, (_, hour) => {
+      const value = String(hour).padStart(2, "0");
+
+      return (
+        <option key={value} value={value}>
+          {value}
+        </option>
+      );
+    })}
+  </select>
+
+  <select
+    value={newTime.split(":")[1] || "00"}
+    onChange={(event) =>
+      setNewTime(`${newTime.split(":")[0] || "09"}:${event.target.value}`)
+    }
+    className="w-full rounded-xl border border-zinc-200 px-3 py-3 text-sm outline-none focus:border-zinc-500"
+  >
+    {["00", "10", "20", "30", "40", "50"].map((minute) => (
+      <option key={minute} value={minute}>
+        {minute}
+      </option>
+    ))}
+  </select>
+</div>
 
               </div>
 

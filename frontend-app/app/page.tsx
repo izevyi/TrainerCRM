@@ -1,35 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
-
-type Client = {
-  id: number;
-  name: string;
-  weight: number;
-  startWeight: number;
-};
-
-type Training = {
-  id: number;
-  clientId: number;
-  clientName: string;
-  date: string;
-  time: string;
-  type: string;
-  completed: boolean;
-};
-
-type ExerciseSet = {
-  id: number;
-  weight: number;
-  reps: number;
-};
-
-type Exercise = {
-  id: number;
-  name: string;
-  sets: ExerciseSet[];
-};
+import { useEffect, useRef, useState } from "react";
+import type {
+  Client,
+  Exercise,
+  TrainerCrmData,
+  Training,
+  TrainingExercises,
+} from "../lib/domain/trainer-crm";
+import { TrainerCrmRepository } from "../lib/storage/trainer-crm-repository";
 
 type WeightPoint = {
   date: string;
@@ -47,7 +26,7 @@ const initialClients: Client[] = [
   { id: 8, name: "Иван Соколов", weight: 88.5, startWeight: 88.5 },
 ];
 
-const initialTrainingExercises: Record<number, Exercise[]> = {
+const initialTrainingExercises: TrainingExercises = {
   1: [
     { id: 1, name: "Приседания", sets: [{ id: 1, weight: 40, reps: 12 }, { id: 2, weight: 45, reps: 10 }, { id: 3, weight: 45, reps: 10 }] },
     { id: 2, name: "Жим ногами", sets: [{ id: 1, weight: 80, reps: 12 }, { id: 2, weight: 90, reps: 10 }] },
@@ -270,85 +249,70 @@ export default function Home() {
 
   const [isHydrated, setIsHydrated] = useState(false);
 
-useEffect(() => {
-  setIsHydrated(true);
-}, []);
-
   const [currentMonth, setCurrentMonth] = useState(
     new Date(today.getFullYear(), today.getMonth(), 1)
   );
 
   const [selectedDate, setSelectedDate] = useState(today);
   
-const [clients, setClients] = useState<Client[]>(initialClients);
-
-useEffect(() => {
-  const saved = localStorage.getItem("trainercrm_clients");
-
-  if (saved) {
-    setClients(JSON.parse(saved));
-  }
-}, []);
-
-useEffect(() => {
-  if (!isHydrated) return;
-
-  localStorage.setItem(
-    "trainercrm_clients",
-    JSON.stringify(clients)
-  );
-}, [clients, isHydrated]);
-
-const [trainings, setTrainings] = useState<Training[]>(initialTrainings);
-
-useEffect(() => {
-  const saved = localStorage.getItem("trainercrm_trainings");
-
-  if (saved) {
-    setTrainings(JSON.parse(saved));
-  }
-}, []);
-
-useEffect(() => {
-  if (!isHydrated) return;
-
-  localStorage.setItem(
-    "trainercrm_trainings",
-    JSON.stringify(trainings)
-  );
-}, [trainings, isHydrated]);
+  const [clients, setClients] = useState<Client[]>(initialClients);
+  const [trainings, setTrainings] = useState<Training[]>(initialTrainings);
 
   const [selectedTraining, setSelectedTraining] =
     useState<Training | null>(null);
 
   const [trainingExercises, setTrainingExercises] =
-  useState<Record<number, Exercise[]>>(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("trainercrm_exercises");
+    useState<TrainingExercises>(initialTrainingExercises);
+  const repositoryRef = useRef<TrainerCrmRepository | null>(null);
+  const skipLoadedDataSaveRef = useRef(false);
 
-      if (saved) {
-        return JSON.parse(saved);
+  useEffect(() => {
+    try {
+      const repository = new TrainerCrmRepository(window.localStorage);
+      repositoryRef.current = repository;
+
+      const result = repository.load({
+        clients: initialClients,
+        trainings: initialTrainings,
+        exercises: initialTrainingExercises,
+      });
+
+      skipLoadedDataSaveRef.current = true;
+      setClients(result.data.clients);
+      setTrainings(result.data.trainings);
+      setTrainingExercises(result.data.exercises);
+
+      if (result.issues.length > 0) {
+        console.error("TrainerCRM storage load completed with issues.", result.issues);
       }
+    } catch (error) {
+      repositoryRef.current = null;
+      console.error("TrainerCRM storage is unavailable; using in-memory data.", error);
+    } finally {
+      setIsHydrated(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    const repository = repositoryRef.current;
+    if (!isHydrated || !repository) return;
+
+    if (skipLoadedDataSaveRef.current) {
+      skipLoadedDataSaveRef.current = false;
+      return;
     }
 
-    return initialTrainingExercises;
-  });
+    const data: TrainerCrmData = {
+      clients,
+      trainings,
+      exercises: trainingExercises,
+    };
+    const result = repository.save(data);
 
-  useEffect(() => {
-  if (!isHydrated) return;
-
-  localStorage.setItem(
-    "trainercrm_trainings",
-    JSON.stringify(trainings)
-  );
-}, [trainings, isHydrated]);
-
-  useEffect(() => {
-    localStorage.setItem(
-      "trainercrm_exercises",
-      JSON.stringify(trainingExercises)
-    );
-  }, [trainingExercises]);
+    if (!result.ok) {
+      console.error("TrainerCRM storage save was not fully successful.", result);
+    }
+  }, [clients, trainings, trainingExercises, isHydrated]);
 
   const [selectedClient, setSelectedClient] =
     useState<Client | null>(null);

@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { ClientProgressSection } from "../components/client-progress-section";
 import type {
   Client,
-  Exercise,
   TrainerCrmData,
   Training,
   TrainingExercises,
 } from "../lib/domain/trainer-crm";
+import { buildClientProgress } from "../lib/progress/client-progress";
 import { TrainerCrmRepository } from "../lib/storage/trainer-crm-repository";
 
 type WeightPoint = {
@@ -216,34 +217,6 @@ function formatShortDate(value: string) {
   return `${day}.${month}`;
 }
 
-function getExerciseProgress(
-  clientId: number,
-  trainings: Training[],
-  trainingExercises: Record<number, Exercise[]>
-) {
-  const completed = trainings
-    .filter((training) => training.clientId === clientId && training.completed)
-    .sort((a, b) => `${a.date}${a.time}`.localeCompare(`${b.date}${b.time}`));
-
-  const byExercise = new Map<string, { first: number; last: number; date: string }>();
-
-  completed.forEach((training) => {
-    (trainingExercises[training.id] ?? []).forEach((exercise) => {
-      const maxWeight = Math.max(0, ...exercise.sets.map((set) => set.weight));
-      if (!maxWeight) return;
-      const current = byExercise.get(exercise.name);
-      if (!current) {
-        byExercise.set(exercise.name, { first: maxWeight, last: maxWeight, date: training.date });
-      } else {
-        current.last = maxWeight;
-        current.date = training.date;
-      }
-    });
-  });
-
-  return Array.from(byExercise.entries()).map(([name, values]) => ({ name, ...values }));
-}
-
 export default function Home() {
   const today = new Date();
 
@@ -371,12 +344,9 @@ export default function Home() {
         .filter((training) => training.clientId === selectedClient.id)
         .sort((a, b) => `${b.date}${b.time}`.localeCompare(`${a.date}${a.time}`))
     : [];
-
-  const completedCount = clientTrainings.filter((training) => training.completed).length;
   const weightProgress = selectedClient
     ? selectedClient.startWeight - selectedClient.weight
     : 0;
-
   const selectedWeightHistory = selectedClient
     ? clientWeightHistory[selectedClient.id] ?? [
         { date: "2026-08-01", weight: selectedClient.startWeight },
@@ -384,9 +354,19 @@ export default function Home() {
       ]
     : [];
 
-  const selectedExerciseProgress = selectedClient
-    ? getExerciseProgress(selectedClient.id, trainings, trainingExercises)
-    : [];
+  const selectedClientProgress = selectedClient
+    ? buildClientProgress(
+        selectedClient.id,
+        trainings,
+        trainingExercises,
+        today,
+      )
+    : {
+        completedThisMonth: 0,
+        completedTotal: 0,
+        latestCompleted: null,
+        exercises: [],
+      };
 
   function goToPreviousMonth() {
     setCurrentMonth(
@@ -965,17 +945,46 @@ export default function Home() {
                   <p className="text-xs text-zinc-500">Карточка клиента</p>
                   <h2 className="mt-1 text-2xl font-semibold">{selectedClient.name}</h2>
                 </div>
-                <button onClick={() => setSelectedClient(null)} className="flex h-10 w-10 items-center justify-center rounded-xl text-xl text-zinc-400">×</button>
+                <button aria-label="Закрыть карточку клиента" onClick={() => setSelectedClient(null)} className="flex h-10 w-10 items-center justify-center rounded-xl text-xl text-zinc-400">×</button>
               </div>
             </div>
 
             <div className="p-4 sm:p-6">
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                <div className="rounded-2xl bg-zinc-50 p-4"><div className="text-xs text-zinc-500">Тренировок</div><div className="mt-1 text-2xl font-semibold">{clientTrainings.length}</div></div>
-                <div className="rounded-2xl bg-zinc-50 p-4"><div className="text-xs text-zinc-500">Завершено</div><div className="mt-1 text-2xl font-semibold">{completedCount}</div></div>
-                <div className="rounded-2xl bg-zinc-50 p-4"><div className="text-xs text-zinc-500">Текущий вес</div><div className="mt-1 text-2xl font-semibold">{selectedClient.weight} кг</div></div>
-                <div className="rounded-2xl bg-zinc-50 p-4"><div className="text-xs text-zinc-500">Изменение</div><div className="mt-1 text-2xl font-semibold">{weightProgress > 0 ? "-" : "+"}{Math.abs(weightProgress).toFixed(1)} кг</div></div>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-5">
+                <div className="rounded-2xl bg-zinc-50 p-4"><div className="text-xs text-zinc-500">Завершено в этом месяце</div><div className="mt-1 text-2xl font-semibold">{selectedClientProgress.completedThisMonth}</div></div>
+                <div className="rounded-2xl bg-zinc-50 p-4"><div className="text-xs text-zinc-500">Завершено всего</div><div className="mt-1 text-2xl font-semibold">{selectedClientProgress.completedTotal}</div></div>
+                <div className="rounded-2xl bg-zinc-50 p-4">
+                  <div className="text-xs text-zinc-500">Последняя завершённая</div>
+
+                  {selectedClientProgress.latestCompleted ? (
+                    <>
+                      <div className="mt-1 text-lg font-semibold">{formatShortDate(selectedClientProgress.latestCompleted.date)} · {selectedClientProgress.latestCompleted.time}</div>
+                      <div className="mt-1 text-xs text-zinc-500">{selectedClientProgress.latestCompleted.type}</div>
+                    </>
+                  ) : (
+                    <div className="mt-1 text-sm font-medium text-zinc-500">Пока нет</div>
+                  )}
+                </div>
+              <div className="rounded-2xl bg-zinc-50 p-4">
+  <div className="text-xs text-zinc-500">Текущий вес</div>
+  <div className="mt-1 text-2xl font-semibold">
+    {selectedClient.weight} кг
+  </div>
+</div>
+
+<div className="rounded-2xl bg-zinc-50 p-4">
+  <div className="text-xs text-zinc-500">Изменение веса</div>
+  <div className="mt-1 text-2xl font-semibold">
+    {weightProgress > 0 ? "-" : "+"}
+    {Math.abs(weightProgress).toFixed(1)} кг
+  </div>
+</div>
               </div>
+
+              <ClientProgressSection
+                key={selectedClient.id}
+                progress={selectedClientProgress}
+              />
 
               <section className="mt-5 rounded-2xl border border-zinc-200 p-4">
                 <div className="flex items-center justify-between gap-3">
@@ -1026,35 +1035,6 @@ export default function Home() {
                     </div>
                   ))}
                 </div>
-              </section>
-
-              <section className="mt-5 rounded-2xl border border-zinc-200 p-4">
-                <div>
-                  <p className="text-xs text-zinc-500">Силовые показатели</p>
-                  <h3 className="mt-1 font-semibold">Прогресс по упражнениям</h3>
-                </div>
-                {selectedExerciseProgress.length === 0 ? (
-                  <p className="mt-4 text-sm text-zinc-500">Пока недостаточно данных для сравнения.</p>
-                ) : (
-                  <div className="mt-4 space-y-2">
-                    {selectedExerciseProgress.map((exercise) => {
-                      const delta = exercise.last - exercise.first;
-                      return (
-                        <div key={exercise.name} className="rounded-xl bg-zinc-50 p-3">
-                          <div className="flex items-center justify-between gap-3">
-                            <span className="text-sm font-medium">{exercise.name}</span>
-                            <span className={`text-sm font-semibold ${delta > 0 ? "text-emerald-600" : delta < 0 ? "text-red-600" : "text-zinc-500"}`}>
-                              {delta > 0 ? "+" : ""}{delta.toFixed(1)} кг
-                            </span>
-                          </div>
-                          <div className="mt-1 text-xs text-zinc-500">
-                            {exercise.first} → {exercise.last} кг · последний раз {formatShortDate(exercise.date)}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
               </section>
 
               <section className="mt-5">

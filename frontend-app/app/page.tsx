@@ -267,6 +267,9 @@ export default function Home() {
   const skipLoadedDataSaveRef = useRef(false);
 
   useEffect(() => {
+    let cancelled = false;
+    let loadedData: TrainerCrmData | null = null;
+
     try {
       const repository = new TrainerCrmRepository(window.localStorage);
       repositoryRef.current = repository;
@@ -278,9 +281,7 @@ export default function Home() {
       });
 
       skipLoadedDataSaveRef.current = true;
-      setClients(result.data.clients);
-      setTrainings(result.data.trainings);
-      setTrainingExercises(result.data.exercises);
+      loadedData = result.data;
 
       if (result.issues.length > 0) {
         console.error("TrainerCRM storage load completed with issues.", result.issues);
@@ -289,8 +290,21 @@ export default function Home() {
       repositoryRef.current = null;
       console.error("TrainerCRM storage is unavailable; using in-memory data.", error);
     } finally {
-      setIsHydrated(true);
+      queueMicrotask(() => {
+        if (cancelled) return;
+
+        if (loadedData) {
+          setClients(loadedData.clients);
+          setTrainings(loadedData.trainings);
+          setTrainingExercises(loadedData.exercises);
+        }
+        setIsHydrated(true);
+      });
     }
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {

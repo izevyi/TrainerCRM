@@ -67,6 +67,31 @@ describe("TrainerCRM schema", () => {
     });
   });
 
+  it("accepts missing and non-negative finite calories, including zero", () => {
+    expect(isTrainings([training])).toBe(true);
+    expect(isTrainings([{ ...training, caloriesBurned: 0 }])).toBe(true);
+    expect(isTrainings([{ ...training, caloriesBurned: 321.5 }])).toBe(true);
+
+    const legacy = decodeSlice([training], isTrainings);
+    const v1 = decodeSlice(
+      { schemaVersion: 1, data: [training] },
+      isTrainings,
+    );
+    expect(legacy.status).toBe("legacy");
+    expect(v1.status).toBe("v1");
+  });
+
+  it.each([
+    -1,
+    Number.NaN,
+    Number.POSITIVE_INFINITY,
+    Number.NEGATIVE_INFINITY,
+    null,
+    "100",
+  ])("rejects invalid calories: %s", (caloriesBurned: unknown) => {
+    expect(isTrainings([{ ...training, caloriesBurned }])).toBe(false);
+  });
+
   it("removes only orphan-owned exercises and is idempotent", () => {
     const source: TrainerCrmData = {
       clients: [],

@@ -27,6 +27,10 @@ function formatVolume(value: number, hasUnrecordedLoad: boolean): string {
   return formatKg(value);
 }
 
+function formatCalories(value: number | null): string {
+  return value === null ? "Нет данных" : `${value.toLocaleString("ru-RU")} ккал`;
+}
+
 function WorkingWeightChart({
   exerciseName,
   observations,
@@ -125,6 +129,21 @@ export function ClientProgressSection({ progress }: ClientProgressSectionProps) 
       </h3>
 
       <div className="mt-4 grid grid-cols-2 gap-2">
+        <div className="rounded-xl bg-zinc-50 p-3">
+          <p className="text-xs text-zinc-500">Калории · за месяц</p>
+          <p className="mt-1 text-sm font-semibold">
+            {formatCalories(progress.caloriesThisMonth)}
+          </p>
+        </div>
+        <div className="rounded-xl bg-zinc-50 p-3">
+          <p className="text-xs text-zinc-500">Калории · всё время</p>
+          <p className="mt-1 text-sm font-semibold">
+            {formatCalories(progress.caloriesTotal)}
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-2 grid grid-cols-2 gap-2">
         <div className="rounded-xl bg-zinc-50 p-3">
           <p className="text-xs text-zinc-500">Внешний вес · за месяц</p>
           <p className="mt-1 text-sm font-semibold">

@@ -15,6 +15,7 @@ export type Training = {
   time: string;
   type: string;
   completed: boolean;
+  caloriesBurned?: number;
 };
 
 export type ExerciseSet = {

@@ -41,6 +41,8 @@ export type ClientProgress = {
   completedThisMonth: number;
   completedTotal: number;
   latestCompleted: CompletedTrainingSummary | null;
+  caloriesThisMonth: number | null;
+  caloriesTotal: number | null;
   volumeThisMonthKg?: number;
   volumeTotalKg?: number;
   hasUnrecordedLoadThisMonth?: boolean;
@@ -120,6 +122,27 @@ export function buildClientProgress(
   let volumeTotalKg = 0;
   let hasUnrecordedLoadThisMonth = false;
   let hasUnrecordedLoadTotal = false;
+  let caloriesThisMonth: number | null = null;
+  let caloriesTotal: number | null = null;
+  const calorieTrainingIds = new Set<number>();
+
+  for (const training of completed) {
+    if (
+      calorieTrainingIds.has(training.id) ||
+      training.caloriesBurned === undefined
+    ) {
+      continue;
+    }
+
+    calorieTrainingIds.add(training.id);
+    caloriesTotal = addFinite(caloriesTotal ?? 0, training.caloriesBurned);
+    if (training.date.startsWith(`${monthKey}-`)) {
+      caloriesThisMonth = addFinite(
+        caloriesThisMonth ?? 0,
+        training.caloriesBurned,
+      );
+    }
+  }
 
   for (const training of completed) {
     for (const exercise of exercisesByTraining[training.id] ?? []) {
@@ -220,6 +243,8 @@ export function buildClientProgress(
           type: latest.type,
         }
       : null,
+    caloriesThisMonth,
+    caloriesTotal,
     volumeThisMonthKg,
     volumeTotalKg,
     hasUnrecordedLoadThisMonth,

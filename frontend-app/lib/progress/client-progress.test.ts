@@ -41,6 +41,63 @@ describe("buildClientProgress", () => {
     });
   });
 
+  it("totals recorded calories only for completed client trainings in the local month", () => {
+    const trainings = [
+      training({ id: 1, date: "2026-09-30", caloriesBurned: 200 }),
+      training({ id: 2, caloriesBurned: 0 }),
+      training({ id: 3 }),
+      training({ id: 4, completed: false, caloriesBurned: 500 }),
+      training({ id: 5, clientId: 2, caloriesBurned: 600 }),
+    ];
+
+    const result = buildClientProgress(
+      1,
+      trainings,
+      {},
+      new Date(2026, 9, 20),
+    );
+
+    expect(result.caloriesThisMonth).toBe(0);
+    expect(result.caloriesTotal).toBe(200);
+  });
+
+  it("reports missing calorie data independently for month and all time", () => {
+    const noData = buildClientProgress(
+      1,
+      [training({ id: 1 })],
+      {},
+      new Date(2026, 9, 20),
+    );
+    const priorOnly = buildClientProgress(
+      1,
+      [training({ id: 2, date: "2026-09-30", caloriesBurned: 250 })],
+      {},
+      new Date(2026, 9, 20),
+    );
+
+    expect(noData.caloriesThisMonth).toBeNull();
+    expect(noData.caloriesTotal).toBeNull();
+    expect(priorOnly.caloriesThisMonth).toBeNull();
+    expect(priorOnly.caloriesTotal).toBe(250);
+  });
+
+  it("counts calories for a duplicated training ID only once", () => {
+    const trainings = [
+      training({ id: 7, caloriesBurned: 125 }),
+      training({ id: 7, caloriesBurned: 125 }),
+    ];
+
+    const result = buildClientProgress(
+      1,
+      trainings,
+      {},
+      new Date(2026, 9, 20),
+    );
+
+    expect(result.caloriesThisMonth).toBe(125);
+    expect(result.caloriesTotal).toBe(125);
+  });
+
   it("joins exercise ownership only through eligible training IDs and ignores orphan data", () => {
     const trainings = [
       training({ id: 10 }),

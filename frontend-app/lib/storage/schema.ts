@@ -58,7 +58,9 @@ export function isTraining(value: unknown): value is Training {
     typeof value.date === "string" &&
     typeof value.time === "string" &&
     typeof value.type === "string" &&
-    typeof value.completed === "boolean"
+    typeof value.completed === "boolean" &&
+    (value.caloriesBurned === undefined ||
+      (isFiniteNumber(value.caloriesBurned) && value.caloriesBurned >= 0))
   );
 }
 

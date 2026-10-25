@@ -365,6 +365,8 @@ export default function Home() {
         completedThisMonth: 0,
         completedTotal: 0,
         latestCompleted: null,
+        caloriesThisMonth: null,
+        caloriesTotal: null,
         exercises: [],
       };
 
@@ -469,6 +471,29 @@ export default function Home() {
   function toggleTrainingCompleted(trainingId: number) {
     setTrainings((current) => current.map((training) => training.id === trainingId ? { ...training, completed: !training.completed } : training));
     setSelectedTraining((current) => current && current.id === trainingId ? { ...current, completed: !current.completed } : current);
+  }
+
+  function updateTrainingCalories(trainingId: number, value: string) {
+    const caloriesBurned = value === "" ? undefined : Number(value);
+    if (
+      caloriesBurned !== undefined &&
+      (!Number.isFinite(caloriesBurned) || caloriesBurned < 0)
+    ) {
+      return;
+    }
+
+    const update = (training: Training): Training => {
+      if (training.id !== trainingId) return training;
+      if (caloriesBurned === undefined) {
+        const withoutCalories = { ...training };
+        delete withoutCalories.caloriesBurned;
+        return withoutCalories;
+      }
+      return { ...training, caloriesBurned };
+    };
+
+    setTrainings((current) => current.map(update));
+    setSelectedTraining((current) => (current ? update(current) : current));
   }
 
   function deleteTraining(id: number) {
@@ -1078,6 +1103,33 @@ export default function Home() {
               <button onClick={() => toggleTrainingCompleted(selectedTraining.id)} className="rounded-xl bg-zinc-900 px-4 py-2.5 text-sm font-medium text-white active:bg-zinc-700">
                 {selectedTraining.completed ? "Отметить как незавершённую" : "Завершить тренировку"}
               </button>
+            </div>
+
+            <div className="mt-4 max-w-xs">
+              <label
+                htmlFor="training-calories-burned"
+                className="block text-xs font-medium text-zinc-600"
+              >
+                Сожжённые калории (необязательно)
+              </label>
+              <div className="relative mt-2">
+                <input
+                  id="training-calories-burned"
+                  type="number"
+                  min="0"
+                  step="any"
+                  inputMode="decimal"
+                  value={selectedTraining.caloriesBurned ?? ""}
+                  onChange={(event) =>
+                    updateTrainingCalories(selectedTraining.id, event.target.value)
+                  }
+                  placeholder="Не указаны"
+                  className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 pr-14 text-sm outline-none focus:border-zinc-400"
+                />
+                <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-zinc-400">
+                  ккал
+                </span>
+              </div>
             </div>
 
             <section className="mt-5">

@@ -131,6 +131,28 @@ describe("TrainerCrmRepository", () => {
     }
   });
 
+  it("persists recorded calories and preserves clearing after reload", () => {
+    const storage = new FakeStorage();
+    const repository = new TrainerCrmRepository(storage);
+    const withCalories: TrainerCrmData = {
+      ...stored,
+      trainings: [{ ...stored.trainings[0], caloriesBurned: 321.5 }],
+    };
+
+    expect(repository.save(withCalories).ok).toBe(true);
+    expect(new TrainerCrmRepository(storage).load(defaults).data.trainings[0])
+      .toMatchObject({ caloriesBurned: 321.5 });
+
+    expect(repository.save(stored).ok).toBe(true);
+    const reloaded = new TrainerCrmRepository(storage).load(defaults);
+    expect(reloaded.data.trainings[0]).not.toHaveProperty("caloriesBurned");
+    expect(storage.values.size).toBe(3);
+    expect(
+      JSON.parse(storage.values.get(TRAINER_CRM_STORAGE_KEYS.trainings)!)
+        .schemaVersion,
+    ).toBe(1);
+  });
+
   it("reports partial writes and continues after one storage failure", () => {
     const storage = new FakeStorage();
     storage.failingWrites.add(TRAINER_CRM_STORAGE_KEYS.trainings);

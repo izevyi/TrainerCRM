@@ -7,6 +7,7 @@ export type AppView = "schedule" | "clients";
 type AppShellProps = {
   activeView: AppView;
   children: ReactNode;
+  hasActiveDialog?: boolean;
   onViewChange: (view: AppView) => void;
 };
 
@@ -47,11 +48,20 @@ function Navigation({
   );
 }
 
-export function AppShell({ activeView, children, onViewChange }: AppShellProps) {
+export function AppShell({
+  activeView,
+  children,
+  hasActiveDialog = false,
+  onViewChange,
+}: AppShellProps) {
   return (
     <div className="min-h-screen bg-zinc-50 text-zinc-950">
       <div className="mx-auto flex min-h-screen w-full max-w-6xl">
-        <aside className="hidden w-56 shrink-0 border-r border-zinc-200 bg-white px-4 py-6 md:block">
+        <aside
+          aria-hidden={hasActiveDialog || undefined}
+          inert={hasActiveDialog || undefined}
+          className="hidden w-56 shrink-0 border-r border-zinc-200 bg-white px-4 py-6 md:block"
+        >
           <p className="px-2 text-xs font-medium uppercase tracking-[0.16em] text-violet-600">
             Панель тренера
           </p>
@@ -68,7 +78,11 @@ export function AppShell({ activeView, children, onViewChange }: AppShellProps) 
         </main>
       </div>
 
-      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-zinc-200 bg-white/95 px-3 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] shadow-[0_-8px_30px_rgba(24,24,27,0.08)] backdrop-blur md:hidden">
+      <div
+        aria-hidden={hasActiveDialog || undefined}
+        inert={hasActiveDialog || undefined}
+        className="fixed inset-x-0 bottom-0 z-40 border-t border-zinc-200 bg-white/95 pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] shadow-[0_-8px_30px_rgba(24,24,27,0.08)] backdrop-blur md:hidden"
+      >
         <Navigation activeView={activeView} onViewChange={onViewChange} />
       </div>
     </div>

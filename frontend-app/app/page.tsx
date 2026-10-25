@@ -322,6 +322,10 @@ export default function Home() {
   const [activeView, setActiveView] = useState<AppView>("schedule");
   const [clientDetailSection, setClientDetailSection] =
     useState<ClientDetailSection>("overview");
+  const addDialogRef = useRef<HTMLDivElement | null>(null);
+  const clientDialogRef = useRef<HTMLDivElement | null>(null);
+  const trainingDialogRef = useRef<HTMLDivElement | null>(null);
+  const dialogOpenerRef = useRef<HTMLElement | null>(null);
 
   const year = currentMonth.getFullYear();
   const month = currentMonth.getMonth();
@@ -376,6 +380,113 @@ export default function Home() {
         caloriesTotal: null,
         exercises: [],
       };
+
+  const activeDialog = selectedTraining
+    ? "training"
+    : selectedClient
+      ? "client"
+      : isAddModalOpen
+        ? "add"
+        : null;
+
+  function rememberDialogOpener(element: HTMLElement) {
+    dialogOpenerRef.current = element;
+  }
+
+  function restoreDialogFocus() {
+    const opener = dialogOpenerRef.current;
+    dialogOpenerRef.current = null;
+
+    requestAnimationFrame(() => {
+      if (opener?.isConnected) opener.focus();
+    });
+  }
+
+  function closeAddDialog() {
+    setIsAddModalOpen(false);
+    restoreDialogFocus();
+  }
+
+  function closeClientDialog() {
+    setSelectedClient(null);
+    restoreDialogFocus();
+  }
+
+  function closeTrainingDialog() {
+    setSelectedTraining(null);
+    restoreDialogFocus();
+  }
+
+  useEffect(() => {
+    if (!activeDialog) return;
+
+    const dialog =
+      activeDialog === "add"
+        ? addDialogRef.current
+        : activeDialog === "client"
+          ? clientDialogRef.current
+          : trainingDialogRef.current;
+
+    if (!dialog) return;
+    const dialogElement = dialog;
+
+    const focusableSelector = [
+      "a[href]",
+      "button:not([disabled])",
+      "input:not([disabled])",
+      "select:not([disabled])",
+      "textarea:not([disabled])",
+      "[tabindex]:not([tabindex='-1'])",
+    ].join(",");
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    requestAnimationFrame(() => {
+      const firstFocusable = dialogElement.querySelector<HTMLElement>(focusableSelector);
+      (firstFocusable ?? dialogElement).focus();
+    });
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        if (activeDialog === "add") setIsAddModalOpen(false);
+        if (activeDialog === "client") setSelectedClient(null);
+        if (activeDialog === "training") setSelectedTraining(null);
+        restoreDialogFocus();
+        return;
+      }
+
+      if (event.key !== "Tab") return;
+
+      const focusable = Array.from(
+        dialogElement.querySelectorAll<HTMLElement>(focusableSelector)
+      );
+      if (focusable.length === 0) {
+        event.preventDefault();
+        dialogElement.focus();
+        return;
+      }
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (!dialogElement.contains(document.activeElement)) {
+        event.preventDefault();
+        (event.shiftKey ? last : first).focus();
+      } else if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [activeDialog]);
 
   function goToPreviousMonth() {
     setCurrentMonth(
@@ -433,7 +544,7 @@ export default function Home() {
       newTraining,
     ]);
 
-    setIsAddModalOpen(false);
+    closeAddDialog();
   }
 
   function getExercisesForTraining(trainingId: number) {
@@ -511,13 +622,21 @@ export default function Home() {
       )
     );
 
-    setSelectedTraining(null);
+    closeTrainingDialog();
   }
 
   return (
-    <AppShell activeView={activeView} onViewChange={setActiveView}>
+    <AppShell
+      activeView={activeView}
+      hasActiveDialog={activeDialog !== null}
+      onViewChange={setActiveView}
+    >
 
-      <div className="mx-auto w-full max-w-5xl px-4 py-4 sm:px-6 sm:py-6 lg:px-8">
+      <div
+        aria-hidden={activeDialog !== null || undefined}
+        inert={activeDialog !== null || undefined}
+        className="mx-auto w-full max-w-5xl px-4 py-4 sm:px-6 sm:py-6 lg:px-8"
+      >
 
         {/* HEADER */}
 
@@ -549,7 +668,7 @@ export default function Home() {
           <>
         {/* CALENDAR */}
 
-        <section className="mt-4 rounded-2xl bg-white p-3 shadow-sm ring-1 ring-zinc-200 sm:mt-8 sm:rounded-3xl sm:p-5">
+        <section aria-labelledby="calendar-month-heading" className="mt-4 rounded-2xl bg-white px-1 py-3 shadow-sm ring-1 ring-zinc-200 sm:mt-8 sm:rounded-3xl sm:p-5">
 
           <div className="flex items-center justify-between">
 
@@ -557,12 +676,12 @@ export default function Home() {
               type="button"
               aria-label="Предыдущий месяц"
               onClick={goToPreviousMonth}
-              className="flex h-10 w-10 items-center justify-center rounded-xl text-2xl text-zinc-400 active:bg-zinc-100 sm:h-11 sm:w-11"
+              className="flex h-11 w-11 items-center justify-center rounded-xl text-2xl text-zinc-400 active:bg-zinc-100"
             >
               ‹
             </button>
 
-            <div className="text-base font-semibold sm:text-lg">
+            <div id="calendar-month-heading" aria-live="polite" className="text-base font-semibold sm:text-lg">
               {monthNames[month]} {year}
             </div>
 
@@ -570,7 +689,7 @@ export default function Home() {
               type="button"
               aria-label="Следующий месяц"
               onClick={goToNextMonth}
-              className="flex h-10 w-10 items-center justify-center rounded-xl text-2xl text-zinc-400 active:bg-zinc-100 sm:h-11 sm:w-11"
+              className="flex h-11 w-11 items-center justify-center rounded-xl text-2xl text-zinc-400 active:bg-zinc-100"
             >
               ›
             </button>
@@ -594,7 +713,7 @@ export default function Home() {
 
           {/* CALENDAR DAYS */}
 
-          <div className="grid grid-cols-7 gap-1">
+          <div className="grid grid-cols-7 gap-0.5 sm:gap-1">
 
             {calendarDays.map(
               (date, index) => {
@@ -635,7 +754,7 @@ export default function Home() {
                   <button
                     key={key}
                     type="button"
-                    aria-label={`${date.toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" })}${trainingCount ? `, ${trainingCount} ${getTrainingWord(trainingCount)}` : ", тренировок нет"}`}
+                    aria-label={`${date.toLocaleDateString("ru-RU", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}${trainingCount ? `, ${trainingCount} ${getTrainingWord(trainingCount)}` : ", тренировок нет"}`}
                     aria-pressed={isSelected}
                     aria-current={isToday ? "date" : undefined}
                     onClick={() => {
@@ -667,10 +786,10 @@ export default function Home() {
 
                     {hasTraining && (
                       <div
-                        className={`mt-0.5 text-[9px] font-semibold leading-none sm:mt-1 sm:text-[10px] ${
+                        className={`mt-0.5 min-w-4 rounded-full px-1 py-0.5 text-[10px] font-semibold leading-none tabular-nums sm:mt-1 ${
                           isSelected
-                            ? "text-white"
-                            : "text-zinc-500"
+                            ? "bg-white/20 text-white"
+                            : "bg-violet-100 text-violet-700"
                         }`}
                       >
                         {trainingCount}
@@ -713,7 +832,8 @@ export default function Home() {
               return (
                 <button
                   key={client.id}
-                  onClick={() => {
+                  onClick={(event) => {
+                    rememberDialogOpener(event.currentTarget);
                     setClientDetailSection("overview");
                     setSelectedClient(client);
                   }}
@@ -739,7 +859,7 @@ export default function Home() {
         {activeView === "schedule" && (
           <>
 
-        <div className="mt-6 flex items-end justify-between sm:mt-8">
+        <div className="mt-6 flex flex-wrap items-end justify-between gap-3 sm:mt-8">
 
           <div>
             <p className="text-xs text-zinc-500 sm:text-sm">
@@ -764,12 +884,13 @@ export default function Home() {
             </span>
 
             <button
-              onClick={() => {
+              onClick={(event) => {
+                rememberDialogOpener(event.currentTarget);
                 setNewClientId("");
                 setNewTime("09:00");
                 setIsAddModalOpen(true);
               }}
-              className="rounded-xl bg-zinc-900 px-3 py-2 text-xs font-medium text-white active:scale-95 sm:px-4 sm:text-sm"
+              className="min-h-11 rounded-xl bg-zinc-900 px-3 py-2 text-xs font-medium text-white active:scale-95 sm:px-4 sm:text-sm"
             >
               + Тренировка
             </button>
@@ -807,11 +928,10 @@ export default function Home() {
 
                 <button
                   key={training.id}
-                  onClick={() =>
-                    setSelectedTraining(
-                      training
-                    )
-                  }
+                  onClick={(event) => {
+                    rememberDialogOpener(event.currentTarget);
+                    setSelectedTraining(training);
+                  }}
                   className="flex w-full items-center gap-3 rounded-2xl bg-white p-3 text-left shadow-sm ring-1 ring-zinc-200 active:scale-[0.99] sm:gap-4 sm:p-4"
                 >
 
@@ -857,7 +977,14 @@ export default function Home() {
 
         <div className="fixed inset-0 z-50 flex items-end bg-black/40 sm:items-center sm:justify-center sm:px-4">
 
-          <div className="w-full rounded-t-3xl bg-white p-5 shadow-2xl sm:max-w-md sm:rounded-3xl sm:p-6">
+          <div
+            ref={addDialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="add-training-dialog-title"
+            tabIndex={-1}
+            className="w-full rounded-t-3xl bg-white p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] shadow-2xl sm:max-w-md sm:rounded-3xl sm:p-6"
+          >
 
             <div className="flex items-center justify-between">
 
@@ -870,17 +997,17 @@ export default function Home() {
                   ].toLowerCase()}
                 </p>
 
-                <h2 className="mt-1 text-xl font-semibold">
+                <h2 id="add-training-dialog-title" className="mt-1 text-xl font-semibold">
                   Новая тренировка
                 </h2>
 
               </div>
 
               <button
-                onClick={() =>
-                  setIsAddModalOpen(false)
-                }
-                className="flex h-10 w-10 items-center justify-center rounded-xl text-xl text-zinc-400 active:bg-zinc-100"
+                type="button"
+                aria-label="Закрыть окно добавления тренировки"
+                onClick={closeAddDialog}
+                className="flex h-11 w-11 items-center justify-center rounded-xl text-xl text-zinc-400 active:bg-zinc-100"
               >
                 ×
               </button>
@@ -891,11 +1018,12 @@ export default function Home() {
 
               <div>
 
-                <label className="text-xs font-medium text-zinc-700 sm:text-sm">
+                <label htmlFor="new-training-client" className="text-xs font-medium text-zinc-700 sm:text-sm">
                   Клиент
                 </label>
 
                 <select
+                  id="new-training-client"
                   value={newClientId}
                   onChange={(event) =>
                     setNewClientId(
@@ -926,12 +1054,13 @@ export default function Home() {
 
               <div>
 
-                <label className="text-xs font-medium text-zinc-700 sm:text-sm">
+                <span className="text-xs font-medium text-zinc-700 sm:text-sm">
                   Время
-                </label>
+                </span>
 
                 <div className="mt-2 grid grid-cols-2 gap-2">
   <select
+    aria-label="Часы начала тренировки"
     value={newTime.split(":")[0]}
     onChange={(event) =>
       setNewTime(`${event.target.value}:${newTime.split(":")[1] || "00"}`)
@@ -950,6 +1079,7 @@ export default function Home() {
   </select>
 
   <select
+    aria-label="Минуты начала тренировки"
     value={newTime.split(":")[1] || "00"}
     onChange={(event) =>
       setNewTime(`${newTime.split(":")[0] || "09"}:${event.target.value}`)
@@ -971,15 +1101,15 @@ export default function Home() {
             <div className="mt-6 flex gap-2">
 
               <button
-                onClick={() =>
-                  setIsAddModalOpen(false)
-                }
+                type="button"
+                onClick={closeAddDialog}
                 className="flex-1 rounded-xl border border-zinc-200 px-3 py-3 text-sm font-medium active:bg-zinc-50"
               >
                 Отмена
               </button>
 
               <button
+                type="button"
                 onClick={addTraining}
                 disabled={!newClientId}
                 className="flex-1 rounded-xl bg-zinc-900 px-3 py-3 text-sm font-medium text-white active:bg-zinc-700 disabled:opacity-40"
@@ -999,14 +1129,21 @@ export default function Home() {
 
       {selectedClient && (
         <div className="fixed inset-0 z-50 overflow-y-auto bg-black/40 p-0 sm:p-6">
-          <div className="mx-auto min-h-full w-full bg-white sm:min-h-0 sm:max-w-3xl sm:rounded-3xl sm:shadow-2xl">
+          <div
+            ref={clientDialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="client-dialog-title"
+            tabIndex={-1}
+            className="mx-auto min-h-full w-full bg-white pb-[env(safe-area-inset-bottom)] sm:min-h-0 sm:max-w-3xl sm:rounded-3xl sm:pb-0 sm:shadow-2xl"
+          >
             <div className="sticky top-0 z-10 border-b border-zinc-200 bg-white px-4 py-4 sm:rounded-t-3xl sm:px-6">
               <div className="flex items-start justify-between">
                 <div>
                   <p className="text-xs text-zinc-500">Карточка клиента</p>
-                  <h2 className="mt-1 text-2xl font-semibold">{selectedClient.name}</h2>
+                  <h2 id="client-dialog-title" className="mt-1 text-2xl font-semibold">{selectedClient.name}</h2>
                 </div>
-                <button aria-label="Закрыть карточку клиента" onClick={() => setSelectedClient(null)} className="flex h-10 w-10 items-center justify-center rounded-xl text-xl text-zinc-400">×</button>
+                <button type="button" aria-label="Закрыть карточку клиента" onClick={closeClientDialog} className="flex h-11 w-11 items-center justify-center rounded-xl text-xl text-zinc-400 active:bg-zinc-100">×</button>
               </div>
             </div>
 
@@ -1137,7 +1274,10 @@ export default function Home() {
                   {clientTrainings.map((training) => (
                     <button
                       key={training.id}
-                      onClick={() => { setSelectedClient(null); setSelectedTraining(training); }}
+                      onClick={() => {
+                        setSelectedClient(null);
+                        setSelectedTraining(training);
+                      }}
                       className="flex w-full items-center gap-3 rounded-2xl border border-zinc-200 p-3 text-left hover:bg-zinc-50"
                     >
                       <div className="w-20 shrink-0"><div className="text-sm font-semibold">{training.date.slice(8, 10)}.{training.date.slice(5, 7)}</div><div className="text-xs text-zinc-500">{training.time}</div></div>
@@ -1160,21 +1300,28 @@ export default function Home() {
 
       {selectedTraining && (
         <div className="fixed inset-0 z-50 flex items-end bg-black/40 sm:items-center sm:justify-center sm:px-4">
-          <div className="max-h-[92vh] w-full overflow-y-auto rounded-t-3xl bg-white p-5 shadow-2xl sm:max-w-3xl sm:rounded-3xl sm:p-6">
+          <div
+            ref={trainingDialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="training-dialog-title"
+            tabIndex={-1}
+            className="max-h-[92vh] w-full overflow-y-auto rounded-t-3xl bg-white p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] shadow-2xl sm:max-w-3xl sm:rounded-3xl sm:p-6"
+          >
             <div className="flex items-start justify-between">
               <div>
                 <p className="text-xs text-zinc-500">Тренировка</p>
-                <h2 className="mt-1 text-xl font-semibold">{selectedTraining.clientName}</h2>
+                <h2 id="training-dialog-title" className="mt-1 text-xl font-semibold">{selectedTraining.clientName}</h2>
                 <p className="mt-1 text-sm text-zinc-500">{selectedTraining.date} · {selectedTraining.time}</p>
               </div>
-              <button onClick={() => setSelectedTraining(null)} className="flex h-10 w-10 items-center justify-center rounded-xl text-xl text-zinc-400 active:bg-zinc-100">×</button>
+              <button type="button" aria-label="Закрыть карточку тренировки" onClick={closeTrainingDialog} className="flex h-11 w-11 items-center justify-center rounded-xl text-xl text-zinc-400 active:bg-zinc-100">×</button>
             </div>
 
             <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className={`inline-flex w-fit items-center rounded-full px-3 py-1.5 text-xs font-semibold ${selectedTraining.completed ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
                 {selectedTraining.completed ? "✓ Тренировка завершена" : "○ Тренировка не завершена"}
               </div>
-              <button onClick={() => toggleTrainingCompleted(selectedTraining.id)} className="rounded-xl bg-zinc-900 px-4 py-2.5 text-sm font-medium text-white active:bg-zinc-700">
+              <button onClick={() => toggleTrainingCompleted(selectedTraining.id)} className="min-h-11 rounded-xl bg-zinc-900 px-4 py-2.5 text-sm font-medium text-white active:bg-zinc-700">
                 {selectedTraining.completed ? "Отметить как незавершённую" : "Завершить тренировку"}
               </button>
             </div>
@@ -1209,7 +1356,7 @@ export default function Home() {
             <section className="mt-5">
               <div className="flex items-end justify-between gap-3">
                 <div><p className="text-xs text-zinc-500">Содержание</p><h3 className="mt-1 text-lg font-semibold">Упражнения и веса</h3></div>
-                <button onClick={() => addExercise(selectedTraining.id)} className="rounded-xl border border-zinc-200 px-3 py-2 text-xs font-medium hover:bg-zinc-50">+ Упражнение</button>
+                <button onClick={() => addExercise(selectedTraining.id)} className="min-h-11 rounded-xl border border-zinc-200 px-3 py-2 text-xs font-medium hover:bg-zinc-50">+ Упражнение</button>
               </div>
 
               <div className="mt-4 space-y-3">
@@ -1226,15 +1373,15 @@ export default function Home() {
                         </div>
                       ))}
                     </div>
-                    <button onClick={() => addSet(selectedTraining.id, exercise.id)} className="mt-3 text-xs font-medium text-zinc-600 hover:text-zinc-900">+ Добавить подход</button>
+                    <button onClick={() => addSet(selectedTraining.id, exercise.id)} className="mt-3 min-h-11 rounded-lg px-2 text-xs font-medium text-zinc-600 hover:text-zinc-900">+ Добавить подход</button>
                   </div>
                 ))}
               </div>
             </section>
 
             <div className="mt-6 flex gap-2">
-              <button onClick={() => setSelectedTraining(null)} className="flex-1 rounded-xl border border-zinc-200 px-3 py-3 text-sm font-medium active:bg-zinc-50">Закрыть</button>
-              <button onClick={() => deleteTraining(selectedTraining.id)} className="rounded-xl bg-red-50 px-4 py-3 text-sm font-medium text-red-600 active:bg-red-100">Удалить</button>
+              <button onClick={closeTrainingDialog} className="min-h-11 flex-1 rounded-xl border border-zinc-200 px-3 py-3 text-sm font-medium active:bg-zinc-50">Закрыть</button>
+              <button onClick={() => deleteTraining(selectedTraining.id)} className="min-h-11 rounded-xl bg-red-50 px-4 py-3 text-sm font-medium text-red-600 active:bg-red-100">Удалить</button>
             </div>
           </div>
         </div>

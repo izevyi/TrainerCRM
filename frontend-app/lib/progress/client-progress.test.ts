@@ -93,6 +93,10 @@ describe("buildClientProgress", () => {
 
     expect(occurrence.sets.map(({ id }) => id)).toEqual([2, 3, 4]);
     expect(occurrence.workingWeight).toBe(55);
+    expect(occurrence.setCount).toBe(3);
+    expect(occurrence.repCount).toBe(30);
+    expect(occurrence.volumeKg).toBe(940);
+    expect(occurrence.hasUnrecordedLoad).toBe(true);
   });
 
   it("retains bodyweight history without kilogram points and excludes zero-repetition exercises", () => {
@@ -122,6 +126,118 @@ describe("buildClientProgress", () => {
     const result = buildClientProgress(1, trainings, exercises, new Date());
     expect(result.exercises[0].occurrences).toHaveLength(2);
     expect(result.exercises[0].weightedOccurrences).toHaveLength(1);
+    expect(result.exercises[0].strengthChange).toBeNull();
     expect(JSON.stringify({ trainings, exercises })).toBe(before);
+  });
+
+  it("merges duplicate normalized exercise names within a training", () => {
+    const exercises: TrainingExercises = {
+      1: [
+        {
+          id: 1,
+          name: " Жим лёжа ",
+          sets: [{ id: 1, weight: 40, reps: 10 }],
+        },
+        {
+          id: 2,
+          name: "ЖИМ   ЛЁЖА",
+          sets: [
+            { id: 1, weight: 45, reps: 8 },
+            { id: 2, weight: 0, reps: 6 },
+          ],
+        },
+      ],
+    };
+
+    const result = buildClientProgress(
+      1,
+      [training({ id: 1 })],
+      exercises,
+      new Date(2026, 9, 20),
+    );
+    const exercise = result.exercises[0];
+
+    expect(exercise.occurrences).toHaveLength(1);
+    expect(exercise.occurrences[0]).toMatchObject({
+      workingWeight: 45,
+      setCount: 3,
+      repCount: 24,
+      volumeKg: 760,
+      hasUnrecordedLoad: true,
+    });
+    expect(result.volumeThisMonthKg).toBe(760);
+    expect(result.volumeTotalKg).toBe(760);
+  });
+
+  it("calculates first-to-latest strength change at full precision", () => {
+    const trainings = [
+      training({ id: 3, date: "2026-10-02", time: "09:00" }),
+      training({ id: 2, date: "2026-10-01", time: "09:00" }),
+      training({ id: 1, date: "2026-10-01", time: "09:00" }),
+    ];
+    const exercises: TrainingExercises = {
+      1: [{ id: 1, name: "Тяга", sets: [{ id: 1, weight: 37.5, reps: 8 }] }],
+      2: [{ id: 1, name: "Тяга", sets: [{ id: 1, weight: 40, reps: 8 }] }],
+      3: [{ id: 1, name: "Тяга", sets: [{ id: 1, weight: 42.5, reps: 6 }] }],
+    };
+
+    const exercise = buildClientProgress(
+      1,
+      trainings,
+      exercises,
+      new Date(2026, 9, 20),
+    ).exercises[0];
+
+    expect(exercise.occurrences.map(({ trainingId }) => trainingId)).toEqual([
+      1, 2, 3,
+    ]);
+    expect(exercise.strengthChange).toEqual({
+      firstWeight: 37.5,
+      latestWeight: 42.5,
+      deltaKg: 5,
+      deltaPct: (5 / 37.5) * 100,
+    });
+  });
+
+  it("excludes invalid numeric contributions and aggregates recorded load by month and all time", () => {
+    const trainings = [
+      training({ id: 1, date: "2026-09-30" }),
+      training({ id: 2, date: "2026-10-01" }),
+    ];
+    const exercises: TrainingExercises = {
+      1: [{ id: 1, name: "Присед", sets: [{ id: 1, weight: 50, reps: 2 }] }],
+      2: [{
+        id: 1,
+        name: "Присед",
+        sets: [
+          { id: 1, weight: 20, reps: 5 },
+          { id: 2, weight: -10, reps: 4 },
+          { id: 3, weight: Number.POSITIVE_INFINITY, reps: 3 },
+          { id: 4, weight: 10, reps: Number.NaN },
+          { id: 5, weight: 10, reps: -2 },
+          { id: 6, weight: Number.MAX_VALUE, reps: 2 },
+        ],
+      }],
+    };
+
+    const result = buildClientProgress(
+      1,
+      trainings,
+      exercises,
+      new Date(2026, 9, 20),
+    );
+    const latest = result.exercises[0].occurrences.at(-1)!;
+
+    expect(latest).toMatchObject({
+      workingWeight: Number.MAX_VALUE,
+      setCount: 4,
+      repCount: 14,
+      volumeKg: 100,
+      hasUnrecordedLoad: true,
+    });
+    expect(result.volumeThisMonthKg).toBe(100);
+    expect(result.volumeTotalKg).toBe(200);
+    expect(result.hasUnrecordedLoadThisMonth).toBe(true);
+    expect(result.hasUnrecordedLoadTotal).toBe(true);
   });
 });

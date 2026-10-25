@@ -16,6 +16,17 @@ export type ExerciseOccurrence = {
   trainingType: string;
   sets: ExerciseSet[];
   workingWeight: number | null;
+  setCount: number;
+  repCount: number;
+  volumeKg: number;
+  hasUnrecordedLoad: boolean;
+};
+
+export type StrengthChange = {
+  firstWeight: number;
+  latestWeight: number;
+  deltaKg: number;
+  deltaPct: number;
 };
 
 export type ExerciseProgress = {
@@ -23,12 +34,17 @@ export type ExerciseProgress = {
   name: string;
   occurrences: ExerciseOccurrence[];
   weightedOccurrences: ExerciseOccurrence[];
+  strengthChange: StrengthChange | null;
 };
 
 export type ClientProgress = {
   completedThisMonth: number;
   completedTotal: number;
   latestCompleted: CompletedTrainingSummary | null;
+  volumeThisMonthKg?: number;
+  volumeTotalKg?: number;
+  hasUnrecordedLoadThisMonth?: boolean;
+  hasUnrecordedLoadTotal?: boolean;
   exercises: ExerciseProgress[];
 };
 
@@ -46,6 +62,40 @@ function compareTrainingOrder(a: Training, b: Training): number {
 
 function cloneSet(set: ExerciseSet): ExerciseSet {
   return { ...set };
+}
+
+function isPerformedSet(set: ExerciseSet): boolean {
+  return Number.isFinite(set.reps) && set.reps > 0;
+}
+
+function isPositiveWeight(weight: number): boolean {
+  return Number.isFinite(weight) && weight > 0;
+}
+
+function addFinite(total: number, contribution: number): number {
+  const next = total + contribution;
+  return Number.isFinite(next) ? next : total;
+}
+
+function occurrenceMetrics(sets: readonly ExerciseSet[]) {
+  const weightedSets = sets.filter((set) => isPositiveWeight(set.weight));
+  const sumFinite = (values: readonly number[]): number =>
+    values.reduce(addFinite, 0);
+
+  return {
+    workingWeight:
+      weightedSets.length > 0
+        ? Math.max(...weightedSets.map((set) => set.weight))
+        : null,
+    setCount: sets.length,
+    repCount: sumFinite(sets.map((set) => set.reps)),
+    volumeKg: sumFinite(
+      weightedSets
+        .map((set) => set.weight * set.reps)
+        .filter(Number.isFinite),
+    ),
+    hasUnrecordedLoad: weightedSets.length < sets.length,
+  };
 }
 
 export function buildClientProgress(
@@ -66,33 +116,50 @@ export function buildClientProgress(
     string,
     { name: string; occurrences: ExerciseOccurrence[] }
   >();
+  let volumeThisMonthKg = 0;
+  let volumeTotalKg = 0;
+  let hasUnrecordedLoadThisMonth = false;
+  let hasUnrecordedLoadTotal = false;
 
   for (const training of completed) {
     for (const exercise of exercisesByTraining[training.id] ?? []) {
       const performedSets = exercise.sets
-        .filter((set) => set.reps > 0)
+        .filter(isPerformedSet)
         .map(cloneSet);
       const key = normalizeExerciseName(exercise.name);
 
       if (performedSets.length === 0 || key.length === 0) continue;
 
-      const positiveWeights = performedSets
-        .map((set) => set.weight)
-        .filter((weight) => weight > 0);
+      const metrics = occurrenceMetrics(performedSets);
+      volumeTotalKg = addFinite(volumeTotalKg, metrics.volumeKg);
+      hasUnrecordedLoadTotal ||= metrics.hasUnrecordedLoad;
+      if (training.date.startsWith(`${monthKey}-`)) {
+        volumeThisMonthKg = addFinite(volumeThisMonthKg, metrics.volumeKg);
+        hasUnrecordedLoadThisMonth ||= metrics.hasUnrecordedLoad;
+      }
+
       const occurrence: ExerciseOccurrence = {
         trainingId: training.id,
         date: training.date,
         time: training.time,
         trainingType: training.type,
         sets: performedSets,
-        workingWeight:
-          positiveWeights.length > 0 ? Math.max(...positiveWeights) : null,
+        ...metrics,
       };
       const current = grouped.get(key);
 
       if (current) {
         current.name = exercise.name.trim().replace(/\s+/g, " ");
-        current.occurrences.push(occurrence);
+        const latestOccurrence = current.occurrences.at(-1);
+        if (latestOccurrence?.trainingId === training.id) {
+          latestOccurrence.sets.push(...performedSets);
+          Object.assign(
+            latestOccurrence,
+            occurrenceMetrics(latestOccurrence.sets),
+          );
+        } else {
+          current.occurrences.push(occurrence);
+        }
       } else {
         grouped.set(key, {
           name: exercise.name.trim().replace(/\s+/g, " "),
@@ -102,14 +169,34 @@ export function buildClientProgress(
     }
   }
 
-  const exerciseProgress = Array.from(grouped, ([key, value]) => ({
-    key,
-    name: value.name,
-    occurrences: value.occurrences,
-    weightedOccurrences: value.occurrences.filter(
+  const exerciseProgress = Array.from(grouped, ([key, value]) => {
+    const weightedOccurrences = value.occurrences.filter(
       (occurrence) => occurrence.workingWeight !== null,
-    ),
-  })).sort((a, b) => {
+    );
+    const firstWeighted = weightedOccurrences[0];
+    const latestWeighted = weightedOccurrences.at(-1);
+    const strengthChange =
+      firstWeighted && latestWeighted && weightedOccurrences.length >= 2
+        ? {
+            firstWeight: firstWeighted.workingWeight!,
+            latestWeight: latestWeighted.workingWeight!,
+            deltaKg:
+              latestWeighted.workingWeight! - firstWeighted.workingWeight!,
+            deltaPct:
+              ((latestWeighted.workingWeight! - firstWeighted.workingWeight!) /
+                firstWeighted.workingWeight!) *
+              100,
+          }
+        : null;
+
+    return {
+      key,
+      name: value.name,
+      occurrences: value.occurrences,
+      weightedOccurrences,
+      strengthChange,
+    };
+  }).sort((a, b) => {
     const latestA = a.occurrences.at(-1)!;
     const latestB = b.occurrences.at(-1)!;
     return (
@@ -133,6 +220,10 @@ export function buildClientProgress(
           type: latest.type,
         }
       : null,
+    volumeThisMonthKg,
+    volumeTotalKg,
+    hasUnrecordedLoadThisMonth,
+    hasUnrecordedLoadTotal,
     exercises: exerciseProgress,
   };
 }

@@ -13,6 +13,20 @@ function formatDisplayDate(value: string): string {
   return `${day}.${month}.${year}`;
 }
 
+function formatKg(value: number): string {
+  return `${value.toFixed(1)} кг`;
+}
+
+function formatSigned(value: number, suffix: string): string {
+  const sign = value > 0 ? "+" : "";
+  return `${sign}${value.toFixed(1)} ${suffix}`;
+}
+
+function formatVolume(value: number, hasUnrecordedLoad: boolean): string {
+  if (value === 0 && hasUnrecordedLoad) return "—";
+  return formatKg(value);
+}
+
 function WorkingWeightChart({
   exerciseName,
   observations,
@@ -78,7 +92,7 @@ function WorkingWeightChart({
       <div className="mt-2 flex justify-between gap-2 text-[10px] text-zinc-400">
         {observations.map((observation, index) => (
           <span key={`${observation.trainingId}-${index}`}>
-            {formatDisplayDate(observation.date)} · {observation.workingWeight} кг
+            {formatDisplayDate(observation.date)} · {formatKg(observation.workingWeight!)}
           </span>
         ))}
       </div>
@@ -98,6 +112,7 @@ export function ClientProgressSection({ progress }: ClientProgressSectionProps) 
   const selectedExercise =
     progress.exercises.find((exercise) => exercise.key === selectedKey) ??
     progress.exercises[0];
+  const latestOccurrence = selectedExercise?.occurrences.at(-1);
 
   return (
     <section
@@ -108,6 +123,33 @@ export function ClientProgressSection({ progress }: ClientProgressSectionProps) 
       <h3 id="client-progress-heading" className="mt-1 font-semibold">
         Прогресс по упражнениям
       </h3>
+
+      <div className="mt-4 grid grid-cols-2 gap-2">
+        <div className="rounded-xl bg-zinc-50 p-3">
+          <p className="text-xs text-zinc-500">Внешний вес · за месяц</p>
+          <p className="mt-1 text-sm font-semibold">
+            {formatVolume(
+              progress.volumeThisMonthKg ?? 0,
+              progress.hasUnrecordedLoadThisMonth ?? false,
+            )}
+          </p>
+        </div>
+        <div className="rounded-xl bg-zinc-50 p-3">
+          <p className="text-xs text-zinc-500">Внешний вес · всё время</p>
+          <p className="mt-1 text-sm font-semibold">
+            {formatVolume(
+              progress.volumeTotalKg ?? 0,
+              progress.hasUnrecordedLoadTotal ?? false,
+            )}
+          </p>
+        </div>
+      </div>
+      {(progress.hasUnrecordedLoadThisMonth ||
+        progress.hasUnrecordedLoadTotal) && (
+        <p className="mt-2 text-xs text-zinc-500">
+          Объём учитывает только подходы с записанным внешним весом. Подходы без него сохранены в повторениях.
+        </p>
+      )}
 
       {!selectedExercise ? (
         <p className="mt-4 text-sm text-zinc-500">
@@ -134,6 +176,53 @@ export function ClientProgressSection({ progress }: ClientProgressSectionProps) 
             ))}
           </select>
 
+          <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <div className="rounded-xl border border-zinc-100 p-3">
+              <p className="text-xs text-zinc-500">Последний рабочий вес</p>
+              <p className="mt-1 text-sm font-semibold">
+                {latestOccurrence?.workingWeight == null
+                  ? "—"
+                  : formatKg(latestOccurrence.workingWeight)}
+              </p>
+            </div>
+            <div className="rounded-xl border border-zinc-100 p-3">
+              <p className="text-xs text-zinc-500">Изменение</p>
+              <p className="mt-1 text-sm font-semibold">
+                {selectedExercise.strengthChange
+                  ? `${formatSigned(selectedExercise.strengthChange.deltaKg, "кг")} · ${formatSigned(selectedExercise.strengthChange.deltaPct, "%")}`
+                  : "—"}
+              </p>
+              {!selectedExercise.strengthChange && (
+                <p className="mt-1 text-[10px] text-zinc-400">
+                  Нужно два выполнения с весом
+                </p>
+              )}
+            </div>
+            <div className="rounded-xl border border-zinc-100 p-3">
+              <p className="text-xs text-zinc-500">Последнее выполнение</p>
+              <p className="mt-1 text-sm font-semibold">
+                {latestOccurrence?.setCount} подх. · {latestOccurrence?.repCount} повт.
+              </p>
+            </div>
+            <div className="rounded-xl border border-zinc-100 p-3">
+              <p className="text-xs text-zinc-500">Объём с внешним весом</p>
+              <p className="mt-1 text-sm font-semibold">
+                {latestOccurrence
+                  ? formatVolume(
+                      latestOccurrence.volumeKg,
+                      latestOccurrence.hasUnrecordedLoad,
+                    )
+                  : "—"}
+              </p>
+              {latestOccurrence?.hasUnrecordedLoad &&
+                latestOccurrence.volumeKg > 0 && (
+                  <p className="mt-1 text-[10px] text-zinc-400">
+                    Только записанный вес
+                  </p>
+                )}
+            </div>
+          </div>
+
           {selectedExercise.weightedOccurrences.length > 0 ? (
             <WorkingWeightChart
               exerciseName={selectedExercise.name}
@@ -159,15 +248,21 @@ export function ClientProgressSection({ progress }: ClientProgressSectionProps) 
                     </span>
                     <span className="text-zinc-500">
                       {occurrence.workingWeight === null
-                        ? "Собственный вес / вес не указан"
-                        : `Рабочий вес ${occurrence.workingWeight} кг`}
+                        ? "Внешний вес не указан"
+                        : `Рабочий вес ${formatKg(occurrence.workingWeight)}`}
                     </span>
                   </div>
+                  <p className="mt-1 text-xs text-zinc-500">
+                    {occurrence.setCount} подх. · {occurrence.repCount} повт. · объём с внешним весом {formatVolume(occurrence.volumeKg, occurrence.hasUnrecordedLoad)}
+                    {occurrence.hasUnrecordedLoad && occurrence.volumeKg > 0
+                      ? " (только записанный вес)"
+                      : ""}
+                  </p>
                   <p className="mt-1 text-xs text-zinc-500">
                     {occurrence.sets
                       .map(
                         (set, index) =>
-                          `${index + 1}: ${set.weight > 0 ? `${set.weight} кг × ` : ""}${set.reps} повт.`,
+                          `${index + 1}: ${Number.isFinite(set.weight) && set.weight > 0 ? `${set.weight.toFixed(1)} кг × ` : ""}${set.reps} повт.`,
                       )
                       .join(" · ")}
                   </p>

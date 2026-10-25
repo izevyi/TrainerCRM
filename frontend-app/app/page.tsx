@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { AppShell, type AppView } from "../components/app-shell";
 import { ClientProgressSection } from "../components/client-progress-section";
 import type {
   Client,
@@ -15,6 +16,8 @@ type WeightPoint = {
   date: string;
   weight: number;
 };
+
+type ClientDetailSection = "overview" | "trainings" | "progress";
 
 const initialClients: Client[] = [
   { id: 1, name: "Анна Петрова", weight: 72.4, startWeight: 76 },
@@ -316,6 +319,10 @@ export default function Home() {
   const [newTime, setNewTime] =
     useState("09:00");
 
+  const [activeView, setActiveView] = useState<AppView>("schedule");
+  const [clientDetailSection, setClientDetailSection] =
+    useState<ClientDetailSection>("overview");
+
   const year = currentMonth.getFullYear();
   const month = currentMonth.getMonth();
 
@@ -508,13 +515,13 @@ export default function Home() {
   }
 
   return (
-    <main className="min-h-screen bg-zinc-50 text-zinc-900">
+    <AppShell activeView={activeView} onViewChange={setActiveView}>
 
-      <div className="mx-auto w-full max-w-5xl px-3 py-4 sm:px-6 sm:py-6">
+      <div className="mx-auto w-full max-w-5xl px-4 py-4 sm:px-6 sm:py-6 lg:px-8">
 
         {/* HEADER */}
 
-        <header className="flex items-center justify-between">
+        <header className="flex items-center justify-between md:hidden">
 
           <div>
             <p className="text-xs font-medium text-zinc-500 sm:text-sm">
@@ -526,15 +533,20 @@ export default function Home() {
             </h1>
           </div>
 
+          {activeView === "schedule" && (
           <button
+            type="button"
             onClick={goToToday}
-            className="rounded-xl bg-zinc-900 px-3 py-2 text-xs font-medium text-white active:scale-95 sm:px-4 sm:text-sm"
+            className="min-h-11 rounded-xl bg-violet-600 px-4 py-2 text-xs font-medium text-white active:scale-95 sm:text-sm"
           >
             Сегодня
           </button>
+          )}
 
         </header>
 
+        {activeView === "schedule" && (
+          <>
         {/* CALENDAR */}
 
         <section className="mt-4 rounded-2xl bg-white p-3 shadow-sm ring-1 ring-zinc-200 sm:mt-8 sm:rounded-3xl sm:p-5">
@@ -542,6 +554,8 @@ export default function Home() {
           <div className="flex items-center justify-between">
 
             <button
+              type="button"
+              aria-label="Предыдущий месяц"
               onClick={goToPreviousMonth}
               className="flex h-10 w-10 items-center justify-center rounded-xl text-2xl text-zinc-400 active:bg-zinc-100 sm:h-11 sm:w-11"
             >
@@ -553,6 +567,8 @@ export default function Home() {
             </div>
 
             <button
+              type="button"
+              aria-label="Следующий месяц"
               onClick={goToNextMonth}
               className="flex h-10 w-10 items-center justify-center rounded-xl text-2xl text-zinc-400 active:bg-zinc-100 sm:h-11 sm:w-11"
             >
@@ -618,6 +634,10 @@ export default function Home() {
                 return (
                   <button
                     key={key}
+                    type="button"
+                    aria-label={`${date.toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" })}${trainingCount ? `, ${trainingCount} ${getTrainingWord(trainingCount)}` : ", тренировок нет"}`}
+                    aria-pressed={isSelected}
+                    aria-current={isToday ? "date" : undefined}
                     onClick={() => {
                       setSelectedDate(date);
                       setSelectedTraining(null);
@@ -666,18 +686,24 @@ export default function Home() {
 
         </section>
 
+          </>
+        )}
+
         {/* CLIENTS */}
-        <section className="mt-6 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-zinc-200 sm:mt-8 sm:rounded-3xl sm:p-5">
+        {activeView === "clients" && (
+        <section className="mt-4 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-zinc-200 sm:mt-8 sm:rounded-3xl sm:p-5">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <p className="text-xs text-zinc-500 sm:text-sm">Быстрый доступ</p>
               <h2 className="mt-1 text-xl font-semibold sm:text-2xl">Клиенты</h2>
             </div>
+            <label htmlFor="client-search" className="sr-only">Поиск клиента</label>
             <input
+              id="client-search"
               value={clientSearch}
               onChange={(event) => setClientSearch(event.target.value)}
               placeholder="Поиск клиента..."
-              className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-sm outline-none focus:border-zinc-400 sm:max-w-xs"
+              className="min-h-11 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-base outline-none focus:border-violet-500 sm:max-w-xs sm:text-sm"
             />
           </div>
 
@@ -687,7 +713,10 @@ export default function Home() {
               return (
                 <button
                   key={client.id}
-                  onClick={() => setSelectedClient(client)}
+                  onClick={() => {
+                    setClientDetailSection("overview");
+                    setSelectedClient(client);
+                  }}
                   className="flex items-center gap-3 rounded-2xl border border-zinc-200 p-3 text-left transition hover:bg-zinc-50 active:scale-[0.99]"
                 >
                   <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-zinc-900 text-sm font-semibold text-white">
@@ -703,8 +732,12 @@ export default function Home() {
             })}
           </div>
         </section>
+        )}
 
         {/* SCHEDULE HEADER */}
+
+        {activeView === "schedule" && (
+          <>
 
         <div className="mt-6 flex items-end justify-between sm:mt-8">
 
@@ -812,6 +845,9 @@ export default function Home() {
           )}
 
         </section>
+
+          </>
+        )}
 
       </div>
 
@@ -975,7 +1011,32 @@ export default function Home() {
             </div>
 
             <div className="p-4 sm:p-6">
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-5">
+              <div className="grid grid-cols-3 gap-1 rounded-2xl bg-zinc-100 p-1" aria-label="Разделы карточки клиента">
+                {([
+                  ["overview", "Обзор"],
+                  ["trainings", "Тренировки"],
+                  ["progress", "Прогресс"],
+                ] as const).map(([section, label]) => (
+                  <button
+                    key={section}
+                    type="button"
+                    aria-pressed={clientDetailSection === section}
+                    onClick={() => setClientDetailSection(section)}
+                    className={`min-h-11 rounded-xl px-2 py-2 text-xs font-medium transition-colors sm:text-sm ${
+                      clientDetailSection === section
+                        ? "bg-white text-violet-700 shadow-sm"
+                        : "text-zinc-600 hover:text-zinc-950"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              {clientDetailSection === "overview" && (
+              <section className="mt-5" aria-labelledby="client-overview-heading">
+                <h3 id="client-overview-heading" className="sr-only">Обзор клиента</h3>
+              <div className="grid grid-cols-2 gap-2 lg:grid-cols-5">
                 <div className="rounded-2xl bg-zinc-50 p-4"><div className="text-xs text-zinc-500">Завершено в этом месяце</div><div className="mt-1 text-2xl font-semibold">{selectedClientProgress.completedThisMonth}</div></div>
                 <div className="rounded-2xl bg-zinc-50 p-4"><div className="text-xs text-zinc-500">Завершено всего</div><div className="mt-1 text-2xl font-semibold">{selectedClientProgress.completedTotal}</div></div>
                 <div className="rounded-2xl bg-zinc-50 p-4">
@@ -1005,7 +1066,11 @@ export default function Home() {
   </div>
 </div>
               </div>
+              </section>
+              )}
 
+              {clientDetailSection === "progress" && (
+              <div>
               <ClientProgressSection
                 key={selectedClient.id}
                 progress={selectedClientProgress}
@@ -1061,7 +1126,10 @@ export default function Home() {
                   ))}
                 </div>
               </section>
+              </div>
+              )}
 
+              {clientDetailSection === "trainings" && (
               <section className="mt-5">
                 <p className="text-xs text-zinc-500">История</p>
                 <h3 className="mt-1 text-lg font-semibold">Тренировки клиента</h3>
@@ -1077,8 +1145,14 @@ export default function Home() {
                       <div className="rounded-full bg-zinc-100 px-2 py-1 text-[10px] font-semibold">Открыть</div>
                     </button>
                   ))}
+                  {clientTrainings.length === 0 && (
+                    <p className="rounded-2xl bg-zinc-50 p-4 text-sm text-zinc-500">
+                      У клиента пока нет тренировок.
+                    </p>
+                  )}
                 </div>
               </section>
+              )}
             </div>
           </div>
         </div>
@@ -1166,6 +1240,6 @@ export default function Home() {
         </div>
       )}
 
-    </main>
+    </AppShell>
   );
 }

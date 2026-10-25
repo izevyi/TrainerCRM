@@ -11,6 +11,14 @@ import type {
 } from "../lib/domain/trainer-crm";
 import { buildClientProgress } from "../lib/progress/client-progress";
 import { TrainerCrmRepository } from "../lib/storage/trainer-crm-repository";
+import {
+  deleteOwnedTraining,
+  normalizeExerciseNameForCommit,
+  parseExerciseNumber,
+  renameExercise,
+  updateExerciseSetValue,
+  type NumericExerciseField,
+} from "../lib/training-editor";
 
 type WeightPoint = {
   date: string;
@@ -220,6 +228,16 @@ function formatShortDate(value: string) {
   return `${day}.${month}`;
 }
 
+function createDefaultExercises() {
+  return [
+    {
+      id: 1,
+      name: "Новое упражнение",
+      sets: [{ id: 1, weight: 0, reps: 0 }],
+    },
+  ];
+}
+
 export default function Home() {
   const today = new Date();
 
@@ -239,6 +257,11 @@ export default function Home() {
 
   const [trainingExercises, setTrainingExercises] =
     useState<TrainingExercises>(initialTrainingExercises);
+  const [exerciseNameDrafts, setExerciseNameDrafts] = useState<Record<string, string>>({});
+  const [exerciseNameErrors, setExerciseNameErrors] = useState<Record<string, string>>({});
+  const [setValueDrafts, setSetValueDrafts] = useState<Record<string, string>>({});
+  const [setValueErrors, setSetValueErrors] = useState<Record<string, string>>({});
+  const [isDeleteConfirming, setIsDeleteConfirming] = useState(false);
   const repositoryRef = useRef<TrainerCrmRepository | null>(null);
   const skipLoadedDataSaveRef = useRef(false);
 
@@ -325,6 +348,8 @@ export default function Home() {
   const addDialogRef = useRef<HTMLDivElement | null>(null);
   const clientDialogRef = useRef<HTMLDivElement | null>(null);
   const trainingDialogRef = useRef<HTMLDivElement | null>(null);
+  const deleteTrainingButtonRef = useRef<HTMLButtonElement | null>(null);
+  const cancelDeleteButtonRef = useRef<HTMLButtonElement | null>(null);
   const dialogOpenerRef = useRef<HTMLElement | null>(null);
 
   const year = currentMonth.getFullYear();
@@ -412,9 +437,23 @@ export default function Home() {
     restoreDialogFocus();
   }
 
+  function resetTrainingEditorState() {
+    setExerciseNameDrafts({});
+    setExerciseNameErrors({});
+    setSetValueDrafts({});
+    setSetValueErrors({});
+    setIsDeleteConfirming(false);
+  }
+
   function closeTrainingDialog() {
+    resetTrainingEditorState();
     setSelectedTraining(null);
     restoreDialogFocus();
+  }
+
+  function cancelTrainingDeletion() {
+    setIsDeleteConfirming(false);
+    requestAnimationFrame(() => deleteTrainingButtonRef.current?.focus());
   }
 
   useEffect(() => {
@@ -442,6 +481,10 @@ export default function Home() {
     document.body.style.overflow = "hidden";
 
     requestAnimationFrame(() => {
+      if (activeDialog === "training" && isDeleteConfirming) {
+        cancelDeleteButtonRef.current?.focus();
+        return;
+      }
       const firstFocusable = dialogElement.querySelector<HTMLElement>(focusableSelector);
       (firstFocusable ?? dialogElement).focus();
     });
@@ -449,9 +492,16 @@ export default function Home() {
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
         event.preventDefault();
+        if (activeDialog === "training" && isDeleteConfirming) {
+          cancelTrainingDeletion();
+          return;
+        }
         if (activeDialog === "add") setIsAddModalOpen(false);
         if (activeDialog === "client") setSelectedClient(null);
-        if (activeDialog === "training") setSelectedTraining(null);
+        if (activeDialog === "training") {
+          resetTrainingEditorState();
+          setSelectedTraining(null);
+        }
         restoreDialogFocus();
         return;
       }
@@ -486,7 +536,7 @@ export default function Home() {
       document.removeEventListener("keydown", handleKeyDown);
       document.body.style.overflow = previousOverflow;
     };
-  }, [activeDialog]);
+  }, [activeDialog, isDeleteConfirming]);
 
   function goToPreviousMonth() {
     setCurrentMonth(
@@ -548,27 +598,97 @@ export default function Home() {
   }
 
   function getExercisesForTraining(trainingId: number) {
-    return trainingExercises[trainingId] ?? [
-      { id: 1, name: "Новое упражнение", sets: [{ id: 1, weight: 0, reps: 0 }] },
-    ];
+    return trainingExercises[trainingId] ?? createDefaultExercises();
   }
 
-  function updateExerciseSet(trainingId: number, exerciseId: number, setId: number, field: "weight" | "reps", value: string) {
-    const numericValue = Number(value);
-    setTrainingExercises((current) => ({
-      ...current,
-      [trainingId]: getExercisesForTraining(trainingId).map((exercise) =>
-        exercise.id === exerciseId
-          ? { ...exercise, sets: exercise.sets.map((set) => set.id === setId ? { ...set, [field]: numericValue } : set) }
-          : exercise
-      ),
-    }));
+  function exerciseNameKey(trainingId: number, exerciseId: number) {
+    return `${trainingId}:${exerciseId}`;
+  }
+
+  function setValueKey(
+    trainingId: number,
+    exerciseId: number,
+    setId: number,
+    field: NumericExerciseField,
+  ) {
+    return `${trainingId}:${exerciseId}:${setId}:${field}`;
+  }
+
+  function omitEditorMessage(
+    current: Record<string, string>,
+    key: string,
+  ) {
+    return Object.fromEntries(
+      Object.entries(current).filter(([entryKey]) => entryKey !== key),
+    );
+  }
+
+  function commitExerciseName(
+    trainingId: number,
+    exerciseId: number,
+    draftName: string,
+  ) {
+    const key = exerciseNameKey(trainingId, exerciseId);
+    const isEmpty = normalizeExerciseNameForCommit(draftName).length === 0;
+
+    if (!isEmpty) {
+      setTrainingExercises((current) => {
+        const source = current[trainingId]
+          ? current
+          : { ...current, [trainingId]: createDefaultExercises() };
+        return renameExercise(source, trainingId, exerciseId, draftName).exercises;
+      });
+    }
+    setExerciseNameDrafts((current) => omitEditorMessage(current, key));
+    setExerciseNameErrors((current) =>
+      isEmpty
+        ? { ...current, [key]: "Введите название упражнения." }
+        : omitEditorMessage(current, key),
+    );
+  }
+
+  function commitExerciseSetValue(
+    trainingId: number,
+    exerciseId: number,
+    setId: number,
+    field: NumericExerciseField,
+    draftValue: string,
+  ) {
+    const key = setValueKey(trainingId, exerciseId, setId, field);
+    const isValid = parseExerciseNumber(field, draftValue) !== null;
+
+    if (isValid) {
+      setTrainingExercises((current) => {
+        const source = current[trainingId]
+          ? current
+          : { ...current, [trainingId]: createDefaultExercises() };
+        return updateExerciseSetValue(
+          source,
+          trainingId,
+          exerciseId,
+          setId,
+          field,
+          draftValue,
+        ).exercises;
+      });
+    }
+    setSetValueDrafts((current) => omitEditorMessage(current, key));
+    setSetValueErrors((current) =>
+      !isValid
+        ? {
+            ...current,
+            [key]: field === "weight"
+              ? "Укажите вес от 0 с шагом 0,5 кг."
+              : "Укажите целое число повторений от 0.",
+          }
+        : omitEditorMessage(current, key),
+    );
   }
 
   function addSet(trainingId: number, exerciseId: number) {
     setTrainingExercises((current) => ({
       ...current,
-      [trainingId]: getExercisesForTraining(trainingId).map((exercise) =>
+      [trainingId]: (current[trainingId] ?? createDefaultExercises()).map((exercise) =>
         exercise.id === exerciseId
           ? { ...exercise, sets: [...exercise.sets, { id: Date.now(), weight: 0, reps: 0 }] }
           : exercise
@@ -580,7 +700,7 @@ export default function Home() {
     setTrainingExercises((current) => ({
       ...current,
       [trainingId]: [
-        ...getExercisesForTraining(trainingId),
+        ...(current[trainingId] ?? createDefaultExercises()),
         { id: Date.now(), name: "Новое упражнение", sets: [{ id: Date.now() + 1, weight: 0, reps: 0 }] },
       ],
     }));
@@ -614,14 +734,11 @@ export default function Home() {
     setSelectedTraining((current) => (current ? update(current) : current));
   }
 
-  function deleteTraining(id: number) {
-    setTrainings((current) =>
-      current.filter(
-        (training) =>
-          training.id !== id
-      )
+  function confirmTrainingDeletion(id: number) {
+    setTrainings((current) => deleteOwnedTraining(current, {}, id).trainings);
+    setTrainingExercises((current) =>
+      deleteOwnedTraining([], current, id).exercises,
     );
-
     closeTrainingDialog();
   }
 
@@ -1360,29 +1477,150 @@ export default function Home() {
               </div>
 
               <div className="mt-4 space-y-3">
-                {getExercisesForTraining(selectedTraining.id).map((exercise) => (
-                  <div key={exercise.id} className="rounded-2xl border border-zinc-200 p-4">
-                    <div className="flex items-center justify-between gap-3"><div className="font-semibold">{exercise.name}</div><span className="text-xs text-zinc-400">{exercise.sets.length} {exercise.sets.length === 1 ? "подход" : exercise.sets.length < 5 ? "подхода" : "подходов"}</span></div>
-                    <div className="mt-3 grid grid-cols-[40px_1fr_1fr] gap-2 text-xs text-zinc-500"><div>№</div><div>Вес, кг</div><div>Повторы</div></div>
+                {getExercisesForTraining(selectedTraining.id).map((exercise, exerciseIndex) => {
+                  const nameKey = exerciseNameKey(selectedTraining.id, exercise.id);
+                  const nameErrorId = `exercise-name-error-${selectedTraining.id}-${exercise.id}`;
+                  const nameWarningId = `exercise-name-warning-${selectedTraining.id}-${exercise.id}`;
+                  const normalizedName = normalizeExerciseNameForCommit(exercise.name).toLocaleLowerCase();
+                  const hasDuplicateName = getExercisesForTraining(selectedTraining.id).some(
+                    (candidate) =>
+                      candidate.id !== exercise.id &&
+                      normalizeExerciseNameForCommit(candidate.name).toLocaleLowerCase() === normalizedName,
+                  );
+
+                  return (
+                  <div key={exercise.id} className="min-w-0 rounded-2xl border border-zinc-200 p-4">
+                    <div className="flex min-w-0 items-start justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <label htmlFor={`exercise-name-${selectedTraining.id}-${exercise.id}`} className="sr-only">
+                          Упражнение {exerciseIndex + 1}, название
+                        </label>
+                        <input
+                          id={`exercise-name-${selectedTraining.id}-${exercise.id}`}
+                          type="text"
+                          value={exerciseNameDrafts[nameKey] ?? exercise.name}
+                          aria-invalid={exerciseNameErrors[nameKey] ? true : undefined}
+                          aria-describedby={[
+                            exerciseNameErrors[nameKey] ? nameErrorId : "",
+                            hasDuplicateName ? nameWarningId : "",
+                          ].filter(Boolean).join(" ") || undefined}
+                          onChange={(event) => {
+                            setExerciseNameDrafts((current) => ({ ...current, [nameKey]: event.target.value }));
+                            setExerciseNameErrors((current) => omitEditorMessage(current, nameKey));
+                          }}
+                          onBlur={(event) => {
+                            if (nameKey in exerciseNameDrafts) {
+                              commitExerciseName(selectedTraining.id, exercise.id, event.target.value);
+                            }
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter") event.currentTarget.blur();
+                            if (event.key === "Escape") {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              setExerciseNameDrafts((current) => omitEditorMessage(current, nameKey));
+                              setExerciseNameErrors((current) => omitEditorMessage(current, nameKey));
+                            }
+                          }}
+                          className="min-h-11 w-full min-w-0 rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-base font-semibold outline-none focus:border-zinc-400 sm:text-sm"
+                        />
+                        {exerciseNameErrors[nameKey] && (
+                          <p id={nameErrorId} role="alert" className="mt-1 break-words text-xs text-red-600">
+                            {exerciseNameErrors[nameKey]}
+                          </p>
+                        )}
+                        {hasDuplicateName && (
+                          <p id={nameWarningId} role="status" className="mt-1 break-words text-xs text-amber-700">
+                            В прогрессе упражнения с одинаковым названием будут объединены.
+                          </p>
+                        )}
+                      </div>
+                      <span className="shrink-0 pt-3 text-xs text-zinc-400">{exercise.sets.length} {exercise.sets.length === 1 ? "подход" : exercise.sets.length < 5 ? "подхода" : "подходов"}</span>
+                    </div>
+                    <div className="mt-3 grid grid-cols-[28px_minmax(0,1fr)_minmax(0,1fr)] gap-2 text-xs text-zinc-500"><div>№</div><div>Вес, кг</div><div>Повторы</div></div>
                     <div className="mt-1 space-y-2">
-                      {exercise.sets.map((set, index) => (
-                        <div key={set.id} className="grid grid-cols-[40px_1fr_1fr] items-center gap-2">
-                          <div className="text-sm font-medium text-zinc-500">{index + 1}</div>
-                          <input type="number" min="0" step="0.5" value={set.weight} onChange={(event) => updateExerciseSet(selectedTraining.id, exercise.id, set.id, "weight", event.target.value)} className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-sm outline-none focus:border-zinc-400" />
-                          <input type="number" min="0" value={set.reps} onChange={(event) => updateExerciseSet(selectedTraining.id, exercise.id, set.id, "reps", event.target.value)} className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-sm outline-none focus:border-zinc-400" />
+                      {exercise.sets.map((set, index) => {
+                        const weightKey = setValueKey(selectedTraining.id, exercise.id, set.id, "weight");
+                        const repsKey = setValueKey(selectedTraining.id, exercise.id, set.id, "reps");
+
+                        return (
+                        <div key={set.id} className="grid min-w-0 grid-cols-[28px_minmax(0,1fr)_minmax(0,1fr)] items-start gap-2">
+                          <div className="pt-3 text-sm font-medium text-zinc-500">{index + 1}</div>
+                          {(["weight", "reps"] as const).map((field) => {
+                            const key = field === "weight" ? weightKey : repsKey;
+                            const errorId = `set-value-error-${selectedTraining.id}-${exercise.id}-${set.id}-${field}`;
+                            const label = field === "weight"
+                              ? `${exercise.name}, подход ${index + 1}, вес в килограммах`
+                              : `${exercise.name}, подход ${index + 1}, количество повторений`;
+
+                            return (
+                              <div key={field} className="min-w-0">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step={field === "weight" ? "0.5" : "1"}
+                                  inputMode={field === "weight" ? "decimal" : "numeric"}
+                                  aria-label={label}
+                                  aria-invalid={setValueErrors[key] ? true : undefined}
+                                  aria-describedby={setValueErrors[key] ? errorId : undefined}
+                                  value={setValueDrafts[key] ?? String(set[field])}
+                                  onChange={(event) => {
+                                    setSetValueDrafts((current) => ({ ...current, [key]: event.target.value }));
+                                    setSetValueErrors((current) => omitEditorMessage(current, key));
+                                  }}
+                                  onBlur={(event) => {
+                                    if (key in setValueDrafts) {
+                                      commitExerciseSetValue(selectedTraining.id, exercise.id, set.id, field, event.target.value);
+                                    }
+                                  }}
+                                  onKeyDown={(event) => {
+                                    if (event.key === "Enter") event.currentTarget.blur();
+                                    if (event.key === "Escape") {
+                                      event.preventDefault();
+                                      event.stopPropagation();
+                                      setSetValueDrafts((current) => omitEditorMessage(current, key));
+                                      setSetValueErrors((current) => omitEditorMessage(current, key));
+                                    }
+                                  }}
+                                  className="min-h-11 w-full min-w-0 rounded-xl border border-zinc-200 bg-zinc-50 px-2 py-2.5 text-base outline-none focus:border-zinc-400 sm:px-3 sm:text-sm"
+                                />
+                                {setValueErrors[key] && (
+                                  <p id={errorId} role="alert" className="mt-1 break-words text-xs leading-tight text-red-600">
+                                    {setValueErrors[key]}
+                                  </p>
+                                )}
+                              </div>
+                            );
+                          })}
                         </div>
-                      ))}
+                        );
+                      })}
                     </div>
                     <button onClick={() => addSet(selectedTraining.id, exercise.id)} className="mt-3 min-h-11 rounded-lg px-2 text-xs font-medium text-zinc-600 hover:text-zinc-900">+ Добавить подход</button>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </section>
 
-            <div className="mt-6 flex gap-2">
-              <button onClick={closeTrainingDialog} className="min-h-11 flex-1 rounded-xl border border-zinc-200 px-3 py-3 text-sm font-medium active:bg-zinc-50">Закрыть</button>
-              <button onClick={() => deleteTraining(selectedTraining.id)} className="min-h-11 rounded-xl bg-red-50 px-4 py-3 text-sm font-medium text-red-600 active:bg-red-100">Удалить</button>
-            </div>
+            {isDeleteConfirming ? (
+              <section aria-labelledby="delete-training-heading" className="mt-6 rounded-2xl border border-red-200 bg-red-50 p-4">
+                <h3 id="delete-training-heading" className="font-semibold text-red-900">Удалить тренировку?</h3>
+                <p className="mt-2 text-sm text-red-800">
+                  {selectedTraining.clientName} · {selectedTraining.date} · {selectedTraining.time}. Сохранённых упражнений: {trainingExercises[selectedTraining.id]?.length ?? 0}.
+                </p>
+                <p className="mt-1 text-xs text-red-700">Тренировка и только принадлежащие ей упражнения будут удалены. Это действие нельзя отменить.</p>
+                <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                  <button ref={cancelDeleteButtonRef} type="button" onClick={cancelTrainingDeletion} className="min-h-11 rounded-xl border border-zinc-300 bg-white px-4 py-3 text-sm font-medium active:bg-zinc-50">Отмена</button>
+                  <button type="button" onClick={() => confirmTrainingDeletion(selectedTraining.id)} className="min-h-11 rounded-xl bg-red-600 px-4 py-3 text-sm font-medium text-white active:bg-red-700">Удалить тренировку</button>
+                </div>
+              </section>
+            ) : (
+              <div className="mt-6 flex gap-2">
+                <button onClick={closeTrainingDialog} className="min-h-11 flex-1 rounded-xl border border-zinc-200 px-3 py-3 text-sm font-medium active:bg-zinc-50">Закрыть</button>
+                <button ref={deleteTrainingButtonRef} type="button" onClick={() => setIsDeleteConfirming(true)} className="min-h-11 rounded-xl bg-red-50 px-4 py-3 text-sm font-medium text-red-600 active:bg-red-100">Удалить</button>
+              </div>
+            )}
           </div>
         </div>
       )}

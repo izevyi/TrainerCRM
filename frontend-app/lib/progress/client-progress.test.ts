@@ -226,6 +226,61 @@ describe("buildClientProgress", () => {
     expect(result.volumeTotalKg).toBe(760);
   });
 
+  it("splits analytics history when one completed occurrence is renamed", () => {
+    const trainings = [
+      training({ id: 1, date: "2026-10-01" }),
+      training({ id: 2, date: "2026-10-02" }),
+    ];
+    const exercises: TrainingExercises = {
+      1: [{ id: 1, name: "Тяга", sets: [{ id: 1, weight: 40, reps: 10 }] }],
+      2: [{ id: 1, name: "Тяга сумо", sets: [{ id: 1, weight: 50, reps: 8 }] }],
+    };
+    const before = JSON.stringify({ trainings, exercises });
+
+    const result = buildClientProgress(
+      1,
+      trainings,
+      exercises,
+      new Date(2026, 9, 20),
+    );
+
+    expect(result.exercises.map(({ key }) => key).sort()).toEqual([
+      "тяга",
+      "тяга сумо",
+    ]);
+    expect(result.exercises.flatMap(({ occurrences }) =>
+      occurrences.map(({ trainingId }) => trainingId)).sort(),
+    ).toEqual([1, 2]);
+    expect(result.volumeTotalKg).toBe(800);
+    expect(JSON.stringify({ trainings, exercises })).toBe(before);
+  });
+
+  it("merges analytics history when a completed occurrence is renamed to an existing normalized name", () => {
+    const trainings = [
+      training({ id: 1, date: "2026-10-01" }),
+      training({ id: 2, date: "2026-10-02" }),
+      training({ id: 3, date: "2026-10-03", completed: false }),
+    ];
+    const exercises: TrainingExercises = {
+      1: [{ id: 1, name: "Тяга", sets: [{ id: 1, weight: 40, reps: 10 }] }],
+      2: [{ id: 1, name: " ТЯГА ", sets: [{ id: 1, weight: 50, reps: 8 }] }],
+      3: [{ id: 1, name: "Тяга", sets: [{ id: 1, weight: 60, reps: 6 }] }],
+    };
+
+    const result = buildClientProgress(
+      1,
+      trainings,
+      exercises,
+      new Date(2026, 9, 20),
+    );
+
+    expect(result.exercises).toHaveLength(1);
+    expect(result.exercises[0].name).toBe("ТЯГА");
+    expect(result.exercises[0].occurrences.map(({ trainingId }) => trainingId))
+      .toEqual([1, 2]);
+    expect(result.volumeTotalKg).toBe(800);
+  });
+
   it("calculates first-to-latest strength change at full precision", () => {
     const trainings = [
       training({ id: 3, date: "2026-10-02", time: "09:00" }),

@@ -10,6 +10,11 @@ import type {
   TrainingExercises,
 } from "../lib/domain/trainer-crm";
 import { buildClientProgress } from "../lib/progress/client-progress";
+import {
+  buildChartPoints,
+  selectTickIndices,
+  summarizeTrend,
+} from "../lib/progress/chart-presentation";
 import { TrainerCrmRepository } from "../lib/storage/trainer-crm-repository";
 import {
   deleteOwnedTraining,
@@ -345,6 +350,9 @@ export default function Home() {
   const [activeView, setActiveView] = useState<AppView>("schedule");
   const [clientDetailSection, setClientDetailSection] =
     useState<ClientDetailSection>("overview");
+  const [expandedWeightClientId, setExpandedWeightClientId] = useState<
+    number | null
+  >(null);
   const addDialogRef = useRef<HTMLDivElement | null>(null);
   const clientDialogRef = useRef<HTMLDivElement | null>(null);
   const trainingDialogRef = useRef<HTMLDivElement | null>(null);
@@ -383,12 +391,31 @@ export default function Home() {
   const weightProgress = selectedClient
     ? selectedClient.startWeight - selectedClient.weight
     : 0;
+  const selectedStaticWeightHistory = selectedClient
+    ? clientWeightHistory[selectedClient.id]
+    : undefined;
   const selectedWeightHistory = selectedClient
-    ? clientWeightHistory[selectedClient.id] ?? [
+    ? selectedStaticWeightHistory ?? [
         { date: "2026-08-01", weight: selectedClient.startWeight },
         { date: formatDate(new Date()), weight: selectedClient.weight },
       ]
     : [];
+  const selectedWeightHistorySource = selectedStaticWeightHistory
+    ? "demo"
+    : "derived";
+  const weightChartObservations = selectedWeightHistory.map((point) => ({
+    date: point.date,
+    value: point.weight,
+  }));
+  const weightChartPoints = buildChartPoints(weightChartObservations);
+  const weightTrend = summarizeTrend(weightChartObservations);
+  const mobileWeightTicks = selectTickIndices(selectedWeightHistory.length, 3);
+  const desktopWeightTicks = selectTickIndices(selectedWeightHistory.length, 5);
+  const isWeightHistoryExpanded =
+    expandedWeightClientId === selectedClient?.id;
+  const visibleWeightHistory = isWeightHistoryExpanded
+    ? selectedWeightHistory
+    : selectedWeightHistory.slice(-3);
 
   const selectedClientProgress = selectedClient
     ? buildClientProgress(
@@ -1331,54 +1358,70 @@ export default function Home() {
               />
 
               <section className="mt-5 rounded-2xl border border-zinc-200 p-4">
-                <div className="flex items-center justify-between gap-3">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
                   <div>
                     <p className="text-xs text-zinc-500">Прогресс веса</p>
                     <h3 className="mt-1 font-semibold">Изменение по датам</h3>
                   </div>
-                  <div className="text-sm font-semibold">{selectedClient.startWeight} → {selectedClient.weight} кг</div>
+                  <div className="break-words text-sm font-semibold tabular-nums">{selectedClient.startWeight} → {selectedClient.weight} кг</div>
                 </div>
 
-                <div className="mt-4 rounded-2xl bg-zinc-50 p-3">
-                  <div className="relative h-40">
-                    <svg viewBox="0 0 640 180" className="h-full w-full" preserveAspectRatio="none" role="img" aria-label="График изменения веса">
-                      {selectedWeightHistory.length > 1 && (() => {
-                        const values = selectedWeightHistory.map((point) => point.weight);
-                        const min = Math.min(...values);
-                        const max = Math.max(...values);
-                        const range = Math.max(max - min, 1);
-                        const points = selectedWeightHistory.map((point, index) => {
-                          const x = (index / (selectedWeightHistory.length - 1)) * 600 + 20;
-                          const y = 150 - ((point.weight - min) / range) * 110;
-                          return `${x},${y}`;
-                        }).join(" ");
-                        return (
-                          <>
-                            <line x1="20" y1="150" x2="620" y2="150" stroke="currentColor" className="text-zinc-200" />
-                            <polyline fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" className="text-zinc-900" points={points} />
-                            {selectedWeightHistory.map((point, index) => {
-                              const x = (index / (selectedWeightHistory.length - 1)) * 600 + 20;
-                              const y = 150 - ((point.weight - min) / range) * 110;
-                              return <circle key={`${point.date}-${index}`} cx={x} cy={y} r="5" fill="currentColor" className="text-zinc-900" />;
-                            })}
-                          </>
-                        );
-                      })()}
-                    </svg>
-                  </div>
-                  <div className="mt-2 flex justify-between gap-2 text-[10px] text-zinc-400">
-                    {selectedWeightHistory.map((point) => <span key={point.date}>{formatShortDate(point.date)}</span>)}
-                  </div>
-                </div>
+                <p className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">
+                  {selectedWeightHistorySource === "demo"
+                    ? "Демонстрационная статическая история. Эти значения не являются сохранёнными измерениями клиента."
+                    : "Расчётное представление по начальному и текущему весу. История измерений не сохраняется."}
+                </p>
 
-                <div className="mt-4 space-y-2">
-                  {selectedWeightHistory.map((point) => (
-                    <div key={point.date} className="flex items-center justify-between rounded-xl border border-zinc-100 px-3 py-2 text-sm">
+                {weightTrend.count === 0 ? (
+                  <p className="mt-4 rounded-2xl bg-zinc-50 p-4 text-sm text-zinc-500">
+                    Нет данных для отображения динамики веса.
+                  </p>
+                ) : (
+                  <figure className="mt-4 rounded-2xl bg-zinc-50 p-3">
+                    <figcaption className="text-sm text-zinc-600">
+                      {weightTrend.count === 1
+                        ? `Одна точка: ${formatShortDate(weightTrend.first!.date)} · ${weightTrend.first!.value.toFixed(1)} кг. Для тренда нужна ещё одна точка.`
+                        : `Точек: ${weightTrend.count}. Период ${formatShortDate(weightTrend.first!.date)}–${formatShortDate(weightTrend.latest!.date)}. Вес ${weightTrend.direction === "increase" ? "увеличился" : weightTrend.direction === "decrease" ? "уменьшился" : "не изменился"}: ${weightTrend.first!.value.toFixed(1)} → ${weightTrend.latest!.value.toFixed(1)} кг (${weightTrend.delta! > 0 ? "+" : ""}${weightTrend.delta!.toFixed(1)} кг).`}
+                    </figcaption>
+                    <div className="mt-3 h-40 sm:h-52">
+                      <svg viewBox="0 0 640 180" className="h-full w-full" preserveAspectRatio="xMidYMid meet" aria-hidden="true" focusable="false">
+                        <line x1="24" y1="90" x2="616" y2="90" stroke="currentColor" className="text-zinc-200" vectorEffect="non-scaling-stroke" />
+                        {weightChartPoints.length > 1 && (
+                          <polyline fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" className="text-zinc-900" points={weightChartPoints.map(({ x, y }) => `${x},${y}`).join(" ")} vectorEffect="non-scaling-stroke" />
+                        )}
+                        {weightChartPoints.map(({ index, x, y }) => (
+                          <circle key={`${selectedWeightHistory[index].date}-${index}`} cx={x} cy={y} r="5" fill="currentColor" className="text-zinc-900" vectorEffect="non-scaling-stroke" />
+                        ))}
+                      </svg>
+                    </div>
+                    <div className="mt-2 flex justify-between gap-2 text-[10px] text-zinc-500 sm:hidden" aria-hidden="true">
+                      {mobileWeightTicks.map((index) => <span key={index} className="min-w-0 text-center first:text-left last:text-right">{formatShortDate(selectedWeightHistory[index].date)}</span>)}
+                    </div>
+                    <div className="mt-2 hidden justify-between gap-2 text-[10px] text-zinc-500 sm:flex" aria-hidden="true">
+                      {desktopWeightTicks.map((index) => <span key={index} className="min-w-0 text-center first:text-left last:text-right">{formatShortDate(selectedWeightHistory[index].date)}</span>)}
+                    </div>
+                  </figure>
+                )}
+
+                <div id="bodyweight-history" className="mt-4 space-y-2">
+                  {visibleWeightHistory.map((point, index) => (
+                    <div key={`${point.date}-${index}`} className="flex items-center justify-between gap-3 rounded-xl border border-zinc-100 px-3 py-2 text-sm">
                       <span className="text-zinc-500">{formatShortDate(point.date)}</span>
-                      <span className="font-semibold">{point.weight} кг</span>
+                      <span className="font-semibold tabular-nums">{point.weight} кг</span>
                     </div>
                   ))}
                 </div>
+                {selectedWeightHistory.length > 3 && (
+                  <button
+                    type="button"
+                    aria-expanded={isWeightHistoryExpanded}
+                    aria-controls="bodyweight-history"
+                    onClick={() => setExpandedWeightClientId(isWeightHistoryExpanded ? null : selectedClient.id)}
+                    className="mt-2 min-h-11 w-full rounded-xl border border-zinc-200 px-3 py-2 text-sm font-medium outline-none hover:bg-zinc-50 focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2"
+                  >
+                    {isWeightHistoryExpanded ? "Свернуть историю" : `Показать все (${selectedWeightHistory.length})`}
+                  </button>
+                )}
               </section>
               </div>
               )}

@@ -3,6 +3,11 @@
 import { useState } from "react";
 
 import type { ClientProgress } from "../lib/progress/client-progress";
+import {
+  buildChartPoints,
+  selectTickIndices,
+  summarizeTrend,
+} from "../lib/progress/chart-presentation";
 
 type ClientProgressSectionProps = {
   progress: ClientProgress;
@@ -38,31 +43,47 @@ function WorkingWeightChart({
   exerciseName: string;
   observations: ClientProgress["exercises"][number]["weightedOccurrences"];
 }) {
-  const weights = observations.map((observation) => observation.workingWeight!);
-  const min = Math.min(...weights);
-  const max = Math.max(...weights);
-  const range = Math.max(max - min, 1);
-  const points = observations.map((observation, index) => ({
-    key: `${observation.trainingId}-${observation.date}-${observation.time}-${index}`,
-    x: observations.length === 1 ? 320 : 20 + (index / (observations.length - 1)) * 600,
-    y: 150 - ((observation.workingWeight! - min) / range) * 110,
+  const chartObservations = observations.map((observation) => ({
+    date: observation.date,
+    value: observation.workingWeight!,
   }));
+  const points = buildChartPoints(chartObservations);
+  const summary = summarizeTrend(chartObservations);
+  const mobileTicks = selectTickIndices(observations.length, 3);
+  const desktopTicks = selectTickIndices(observations.length, 5);
+  const direction =
+    summary.direction === "increase"
+      ? "увеличился"
+      : summary.direction === "decrease"
+        ? "уменьшился"
+        : "не изменился";
 
   return (
-    <div className="mt-4 rounded-2xl bg-zinc-50 p-3">
-      <div className="h-40">
+    <figure className="mt-4 rounded-2xl bg-zinc-50 p-3">
+      <figcaption className="text-sm text-zinc-600">
+        {summary.count === 1 ? (
+          <>
+            Одна запись: {formatDisplayDate(summary.first!.date)} · {formatKg(summary.first!.value)}. Для тренда нужна ещё одна запись.
+          </>
+        ) : (
+          <>
+            Наблюдений: {summary.count}. Период с {formatDisplayDate(summary.first!.date)} по {formatDisplayDate(summary.latest!.date)}. Рабочий вес {direction}: {formatKg(summary.first!.value)} → {formatKg(summary.latest!.value)} ({formatSigned(summary.delta!, "кг")}).
+          </>
+        )}
+      </figcaption>
+      <div className="mt-3 h-40 sm:h-52">
         <svg
           viewBox="0 0 640 180"
           className="h-full w-full"
-          preserveAspectRatio="none"
-          role="img"
-          aria-label={`Динамика рабочего веса упражнения «${exerciseName}»`}
+          preserveAspectRatio="xMidYMid meet"
+          aria-hidden="true"
+          focusable="false"
         >
           <line
             x1="20"
-            y1="150"
+            y1="90"
             x2="620"
-            y2="150"
+            y2="90"
             stroke="currentColor"
             className="text-zinc-200"
             vectorEffect="non-scaling-stroke"
@@ -80,9 +101,9 @@ function WorkingWeightChart({
               vectorEffect="non-scaling-stroke"
             />
           )}
-          {points.map(({ key, x, y }) => (
+          {points.map(({ index, x, y }) => (
             <circle
-              key={key}
+              key={`${observations[index].trainingId}-${observations[index].date}-${index}`}
               cx={x}
               cy={y}
               r="6"
@@ -93,19 +114,22 @@ function WorkingWeightChart({
           ))}
         </svg>
       </div>
-      <div className="mt-2 flex justify-between gap-2 text-[10px] text-zinc-400">
-        {observations.map((observation, index) => (
-          <span key={`${observation.trainingId}-${index}`}>
-            {formatDisplayDate(observation.date)} · {formatKg(observation.workingWeight!)}
+      <div className="mt-2 flex justify-between gap-2 text-[10px] text-zinc-500 sm:hidden" aria-hidden="true">
+        {mobileTicks.map((index) => (
+          <span key={index} className="min-w-0 text-center first:text-left last:text-right">
+            {formatDisplayDate(observations[index].date)}
           </span>
         ))}
       </div>
-      {observations.length === 1 && (
-        <p className="mt-3 text-xs text-zinc-500">
-          Нужно ещё одно выполнение с указанным весом для тренда.
-        </p>
-      )}
-    </div>
+      <div className="mt-2 hidden justify-between gap-2 text-[10px] text-zinc-500 sm:flex" aria-hidden="true">
+        {desktopTicks.map((index) => (
+          <span key={index} className="min-w-0 text-center first:text-left last:text-right">
+            {formatDisplayDate(observations[index].date)}
+          </span>
+        ))}
+      </div>
+      <span className="sr-only">Упражнение: {exerciseName}.</span>
+    </figure>
   );
 }
 
@@ -113,10 +137,19 @@ export function ClientProgressSection({ progress }: ClientProgressSectionProps) 
   const [selectedKey, setSelectedKey] = useState(
     progress.exercises[0]?.key ?? "",
   );
+  const [expandedExerciseKey, setExpandedExerciseKey] = useState<string | null>(
+    null,
+  );
   const selectedExercise =
     progress.exercises.find((exercise) => exercise.key === selectedKey) ??
     progress.exercises[0];
   const latestOccurrence = selectedExercise?.occurrences.at(-1);
+  const isHistoryExpanded = expandedExerciseKey === selectedExercise?.key;
+  const visibleOccurrences = selectedExercise
+    ? isHistoryExpanded
+      ? selectedExercise.occurrences
+      : selectedExercise.occurrences.slice(-3)
+    : [];
 
   return (
     <section
@@ -128,34 +161,34 @@ export function ClientProgressSection({ progress }: ClientProgressSectionProps) 
         Прогресс по упражнениям
       </h3>
 
-      <div className="mt-4 grid grid-cols-2 gap-2">
-        <div className="rounded-xl bg-zinc-50 p-3">
+      <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
+        <div className="min-w-0 rounded-xl bg-zinc-50 p-3">
           <p className="text-xs text-zinc-500">Калории · за месяц</p>
-          <p className="mt-1 text-sm font-semibold">
+          <p className="mt-1 break-words text-sm font-semibold tabular-nums">
             {formatCalories(progress.caloriesThisMonth)}
           </p>
         </div>
-        <div className="rounded-xl bg-zinc-50 p-3">
+        <div className="min-w-0 rounded-xl bg-zinc-50 p-3">
           <p className="text-xs text-zinc-500">Калории · всё время</p>
-          <p className="mt-1 text-sm font-semibold">
+          <p className="mt-1 break-words text-sm font-semibold tabular-nums">
             {formatCalories(progress.caloriesTotal)}
           </p>
         </div>
       </div>
 
-      <div className="mt-2 grid grid-cols-2 gap-2">
-        <div className="rounded-xl bg-zinc-50 p-3">
+      <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+        <div className="min-w-0 rounded-xl bg-zinc-50 p-3">
           <p className="text-xs text-zinc-500">Внешний вес · за месяц</p>
-          <p className="mt-1 text-sm font-semibold">
+          <p className="mt-1 break-words text-sm font-semibold tabular-nums">
             {formatVolume(
               progress.volumeThisMonthKg ?? 0,
               progress.hasUnrecordedLoadThisMonth ?? false,
             )}
           </p>
         </div>
-        <div className="rounded-xl bg-zinc-50 p-3">
+        <div className="min-w-0 rounded-xl bg-zinc-50 p-3">
           <p className="text-xs text-zinc-500">Внешний вес · всё время</p>
-          <p className="mt-1 text-sm font-semibold">
+          <p className="mt-1 break-words text-sm font-semibold tabular-nums">
             {formatVolume(
               progress.volumeTotalKg ?? 0,
               progress.hasUnrecordedLoadTotal ?? false,
@@ -185,7 +218,10 @@ export function ClientProgressSection({ progress }: ClientProgressSectionProps) 
           <select
             id="client-progress-exercise"
             value={selectedExercise.key}
-            onChange={(event) => setSelectedKey(event.target.value)}
+            onChange={(event) => {
+              setSelectedKey(event.target.value);
+              setExpandedExerciseKey(null);
+            }}
             className="mt-2 min-h-11 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-base outline-none focus:border-violet-500 sm:text-sm"
           >
             {progress.exercises.map((exercise) => (
@@ -195,18 +231,18 @@ export function ClientProgressSection({ progress }: ClientProgressSectionProps) 
             ))}
           </select>
 
-          <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
-            <div className="rounded-xl border border-zinc-100 p-3">
+          <div className="mt-4 grid grid-cols-1 gap-2 min-[390px]:grid-cols-2 sm:grid-cols-4">
+            <div className="min-w-0 rounded-xl border border-zinc-100 p-3">
               <p className="text-xs text-zinc-500">Последний рабочий вес</p>
-              <p className="mt-1 text-sm font-semibold">
+              <p className="mt-1 break-words text-sm font-semibold tabular-nums">
                 {latestOccurrence?.workingWeight == null
                   ? "—"
                   : formatKg(latestOccurrence.workingWeight)}
               </p>
             </div>
-            <div className="rounded-xl border border-zinc-100 p-3">
+            <div className="min-w-0 rounded-xl border border-zinc-100 p-3">
               <p className="text-xs text-zinc-500">Изменение</p>
-              <p className="mt-1 text-sm font-semibold">
+              <p className="mt-1 break-words text-sm font-semibold tabular-nums">
                 {selectedExercise.strengthChange
                   ? `${formatSigned(selectedExercise.strengthChange.deltaKg, "кг")} · ${formatSigned(selectedExercise.strengthChange.deltaPct, "%")}`
                   : "—"}
@@ -217,15 +253,15 @@ export function ClientProgressSection({ progress }: ClientProgressSectionProps) 
                 </p>
               )}
             </div>
-            <div className="rounded-xl border border-zinc-100 p-3">
+            <div className="min-w-0 rounded-xl border border-zinc-100 p-3">
               <p className="text-xs text-zinc-500">Последнее выполнение</p>
-              <p className="mt-1 text-sm font-semibold">
+              <p className="mt-1 break-words text-sm font-semibold tabular-nums">
                 {latestOccurrence?.setCount} подх. · {latestOccurrence?.repCount} повт.
               </p>
             </div>
-            <div className="rounded-xl border border-zinc-100 p-3">
+            <div className="min-w-0 rounded-xl border border-zinc-100 p-3">
               <p className="text-xs text-zinc-500">Объём с внешним весом</p>
-              <p className="mt-1 text-sm font-semibold">
+              <p className="mt-1 break-words text-sm font-semibold tabular-nums">
                 {latestOccurrence
                   ? formatVolume(
                       latestOccurrence.volumeKg,
@@ -255,8 +291,8 @@ export function ClientProgressSection({ progress }: ClientProgressSectionProps) 
 
           <div className="mt-4">
             <h4 className="text-sm font-semibold">История выполнений</h4>
-            <ul className="mt-2 space-y-2">
-              {selectedExercise.occurrences.map((occurrence, occurrenceIndex) => (
+            <ul id="exercise-history" className="mt-2 space-y-2">
+              {visibleOccurrences.map((occurrence, occurrenceIndex) => (
                 <li
                   key={`${occurrence.trainingId}-${occurrenceIndex}`}
                   className="rounded-xl border border-zinc-100 px-3 py-2"
@@ -288,6 +324,23 @@ export function ClientProgressSection({ progress }: ClientProgressSectionProps) 
                 </li>
               ))}
             </ul>
+            {selectedExercise.occurrences.length > 3 && (
+              <button
+                type="button"
+                aria-expanded={isHistoryExpanded}
+                aria-controls="exercise-history"
+                onClick={() =>
+                  setExpandedExerciseKey(
+                    isHistoryExpanded ? null : selectedExercise.key,
+                  )
+                }
+                className="mt-2 min-h-11 w-full rounded-xl border border-zinc-200 px-3 py-2 text-sm font-medium outline-none hover:bg-zinc-50 focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2"
+              >
+                {isHistoryExpanded
+                  ? "Свернуть историю"
+                  : `Показать все (${selectedExercise.occurrences.length})`}
+              </button>
+            )}
           </div>
         </>
       )}

@@ -22,3 +22,4 @@ psql -X -v ON_ERROR_STOP=1 "$DATABASE_URL" -f "$root_dir/migrations/002_schema.s
 psql -X -v ON_ERROR_STOP=1 "$DATABASE_URL" -f "$root_dir/migrations/003_booking_functions.sql"
 psql -X -v ON_ERROR_STOP=1 "$DATABASE_URL" -f "$root_dir/tests/serial.sql"
 "$root_dir/tests/concurrency.sh"
+"$root_dir/tests/extended-concurrency.sh"

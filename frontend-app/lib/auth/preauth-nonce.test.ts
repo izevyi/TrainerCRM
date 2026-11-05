@@ -1,4 +1,4 @@
-import { createHmac } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 import { Buffer } from "node:buffer";
 import { describe, expect, it, vi } from "vitest";
 
@@ -54,13 +54,41 @@ describe("server-side pre-authentication nonce", () => {
     const second = issue();
     const envelope = decodeEnvelope(first.challenge);
 
-    expect(() => verify(first)).not.toThrow();
+    const verified = verify(first);
+    expect(verified).toMatchObject({
+      issuedAtMs: issuedAt,
+      expiresAtMs: issuedAt + PREAUTH_NONCE_LIFETIME_MS,
+    });
+    expect(verified.nonceDigest).toHaveLength(32);
     expect(first.cookieNonce).toMatch(/^[A-Za-z0-9_-]{22}$/);
     expect(envelope.n).toMatch(/^[A-Za-z0-9_-]{22}$/);
     expect(envelope.n).not.toBe(first.cookieNonce);
     expect(second.cookieNonce).not.toBe(first.cookieNonce);
     expect(decodeEnvelope(second.challenge).n).not.toBe(envelope.n);
     expect(envelope.exp).toBe(issuedAt + PREAUTH_NONCE_LIFETIME_MS);
+  });
+
+  it("derives the purpose-framed consumption digest from the authenticated challenge nonce", () => {
+    const issued = issue();
+    const envelope = decodeEnvelope(issued.challenge);
+    const purpose = Buffer.from("invitation.accept", "utf8");
+    const purposeLength = Buffer.alloc(2);
+    purposeLength.writeUInt16BE(purpose.length);
+    const independentlyDerived = createHash("sha256")
+      .update("trainercrm.preauth-nonce-consumption.v1", "utf8")
+      .update(Buffer.from([0]))
+      .update(purposeLength)
+      .update(purpose)
+      .update(Buffer.from([0]))
+      .update(Buffer.from(envelope.n as string, "base64url"))
+      .digest();
+
+    expect(verify(issued).nonceDigest).toEqual(independentlyDerived);
+    expect(verify(issued).nonceDigest).not.toEqual(
+      createHash("sha256")
+        .update(Buffer.from(issued.cookieNonce, "base64url"))
+        .digest(),
+    );
   });
 
   it("enforces the exact five-minute boundary with equality expired", () => {

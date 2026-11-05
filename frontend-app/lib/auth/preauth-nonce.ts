@@ -18,6 +18,8 @@ const BASE64URL_128_PATTERN = /^[A-Za-z0-9_-]{22}$/;
 const BASE64URL_256_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 const CHALLENGE_PATTERN = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]{43}$/;
 const MAC_DOMAIN = "trainercrm.preauth-nonce.v1";
+const CONSUMPTION_DIGEST_DOMAIN =
+  "trainercrm.preauth-nonce-consumption.v1";
 
 type Envelope = Readonly<{
   v: 1;
@@ -47,6 +49,12 @@ export type VerifyPreauthNonceOptions = Readonly<{
   applicationOrigin: string;
   macKey: Uint8Array;
   nowMs?: number;
+}>;
+
+export type VerifiedPreauthNonce = Readonly<{
+  nonceDigest: Buffer;
+  issuedAtMs: number;
+  expiresAtMs: number;
 }>;
 
 export class PreauthNonceError extends Error {
@@ -158,6 +166,26 @@ function computeMac(payload: Uint8Array, macKey: Uint8Array): Buffer {
     .digest();
 }
 
+function consumptionDigest(challengeNonce: string): Buffer {
+  const nonce = decodeCanonicalBase64url(
+    challengeNonce,
+    BASE64URL_128_PATTERN,
+    NONCE_BYTES,
+  );
+  const purpose = Buffer.from(PREAUTH_NONCE_PURPOSE, "utf8");
+  const purposeLength = Buffer.allocUnsafe(2);
+  purposeLength.writeUInt16BE(purpose.byteLength);
+
+  return createHash("sha256")
+    .update(CONSUMPTION_DIGEST_DOMAIN, "utf8")
+    .update(Buffer.from([0]))
+    .update(purposeLength)
+    .update(purpose)
+    .update(Buffer.from([0]))
+    .update(nonce)
+    .digest();
+}
+
 function parseEnvelope(payload: Buffer): Envelope {
   let value: unknown;
   try {
@@ -238,7 +266,7 @@ export function issuePreauthNonce(
  */
 export function verifyPreauthNonce(
   options: VerifyPreauthNonceOptions,
-): void {
+): VerifiedPreauthNonce {
   if (typeof options !== "object" || options === null) invalid();
   const macKey = requireMacKey(options.macKey);
   const applicationOrigin = requireCanonicalHttpsOrigin(
@@ -277,4 +305,10 @@ export function verifyPreauthNonce(
   ) {
     invalid();
   }
+
+  return {
+    nonceDigest: consumptionDigest(envelope.n),
+    issuedAtMs: envelope.iat,
+    expiresAtMs: envelope.exp,
+  };
 }

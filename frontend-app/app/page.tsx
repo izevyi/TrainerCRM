@@ -17,6 +17,10 @@ import {
 } from "../lib/progress/chart-presentation";
 import { TrainerCrmRepository } from "../lib/storage/trainer-crm-repository";
 import {
+  createClient,
+  type ClientCreationError,
+} from "./client-creation";
+import {
   deleteOwnedTraining,
   normalizeExerciseNameForCommit,
   parseExerciseNumber,
@@ -247,6 +251,7 @@ export default function Home() {
   const today = new Date();
 
   const [isHydrated, setIsHydrated] = useState(false);
+  const [storageWarning, setStorageWarning] = useState<string | null>(null);
 
   const [currentMonth, setCurrentMonth] = useState(
     new Date(today.getFullYear(), today.getMonth(), 1)
@@ -273,6 +278,7 @@ export default function Home() {
   useEffect(() => {
     let cancelled = false;
     let loadedData: TrainerCrmData | null = null;
+    let loadedStorageWarning: string | null = null;
 
     try {
       const repository = new TrainerCrmRepository(window.localStorage);
@@ -288,10 +294,12 @@ export default function Home() {
       loadedData = result.data;
 
       if (result.issues.length > 0) {
+        loadedStorageWarning = "Часть сохранённых данных не удалось прочитать. Изменения могут не сохраниться.";
         console.error("TrainerCRM storage load completed with issues.", result.issues);
       }
     } catch (error) {
       repositoryRef.current = null;
+      loadedStorageWarning = "Хранилище браузера недоступно. Изменения останутся только до перезагрузки страницы.";
       console.error("TrainerCRM storage is unavailable; using in-memory data.", error);
     } finally {
       queueMicrotask(() => {
@@ -302,6 +310,7 @@ export default function Home() {
           setTrainings(loadedData.trainings);
           setTrainingExercises(loadedData.exercises);
         }
+        setStorageWarning(loadedStorageWarning);
         setIsHydrated(true);
       });
     }
@@ -328,7 +337,10 @@ export default function Home() {
     const result = repository.save(data);
 
     if (!result.ok) {
+      setStorageWarning("Не удалось сохранить изменения в браузере. Они могут исчезнуть после перезагрузки.");
       console.error("TrainerCRM storage save was not fully successful.", result);
+    } else {
+      setStorageWarning(null);
     }
   }, [clients, trainings, trainingExercises, isHydrated]);
 
@@ -340,6 +352,12 @@ export default function Home() {
 
   const [isAddModalOpen, setIsAddModalOpen] =
     useState(false);
+  const [isClientCreationOpen, setIsClientCreationOpen] = useState(false);
+  const [newClientName, setNewClientName] = useState("");
+  const [newClientWeight, setNewClientWeight] = useState("");
+  const [clientCreationErrors, setClientCreationErrors] = useState<
+    ClientCreationError["fieldErrors"]
+  >({});
 
   const [newClientId, setNewClientId] =
     useState("");
@@ -354,6 +372,7 @@ export default function Home() {
     number | null
   >(null);
   const addDialogRef = useRef<HTMLDivElement | null>(null);
+  const clientCreationDialogRef = useRef<HTMLDivElement | null>(null);
   const clientDialogRef = useRef<HTMLDivElement | null>(null);
   const trainingDialogRef = useRef<HTMLDivElement | null>(null);
   const deleteTrainingButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -437,6 +456,8 @@ export default function Home() {
     ? "training"
     : selectedClient
       ? "client"
+      : isClientCreationOpen
+        ? "create-client"
       : isAddModalOpen
         ? "add"
         : null;
@@ -457,6 +478,29 @@ export default function Home() {
   function closeAddDialog() {
     setIsAddModalOpen(false);
     restoreDialogFocus();
+  }
+
+  function closeClientCreationDialog() {
+    setIsClientCreationOpen(false);
+    setClientCreationErrors({});
+    restoreDialogFocus();
+  }
+
+  function addClient() {
+    const result = createClient(
+      { clients, trainings, exercises: trainingExercises },
+      { name: newClientName, startingWeight: newClientWeight },
+    );
+
+    if (!result.ok) {
+      setClientCreationErrors(result.fieldErrors);
+      return;
+    }
+
+    setClients(result.data.clients);
+    setNewClientName("");
+    setNewClientWeight("");
+    closeClientCreationDialog();
   }
 
   function closeClientDialog() {
@@ -489,6 +533,8 @@ export default function Home() {
     const dialog =
       activeDialog === "add"
         ? addDialogRef.current
+        : activeDialog === "create-client"
+          ? clientCreationDialogRef.current
         : activeDialog === "client"
           ? clientDialogRef.current
           : trainingDialogRef.current;
@@ -524,6 +570,10 @@ export default function Home() {
           return;
         }
         if (activeDialog === "add") setIsAddModalOpen(false);
+        if (activeDialog === "create-client") {
+          setIsClientCreationOpen(false);
+          setClientCreationErrors({});
+        }
         if (activeDialog === "client") setSelectedClient(null);
         if (activeDialog === "training") {
           resetTrainingEditorState();
@@ -808,6 +858,15 @@ export default function Home() {
 
         </header>
 
+        {isHydrated && storageWarning && (
+          <p
+            role="alert"
+            className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+          >
+            {storageWarning}
+          </p>
+        )}
+
         {activeView === "schedule" && (
           <>
         {/* CALENDAR */}
@@ -960,14 +1019,30 @@ export default function Home() {
               <p className="text-xs text-zinc-500 sm:text-sm">Быстрый доступ</p>
               <h2 className="mt-1 text-xl font-semibold sm:text-2xl">Клиенты</h2>
             </div>
-            <label htmlFor="client-search" className="sr-only">Поиск клиента</label>
-            <input
-              id="client-search"
-              value={clientSearch}
-              onChange={(event) => setClientSearch(event.target.value)}
-              placeholder="Поиск клиента..."
-              className="min-h-11 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-base outline-none focus:border-violet-500 sm:max-w-xs sm:text-sm"
-            />
+            <div className="flex w-full flex-col gap-2 sm:max-w-md sm:flex-row">
+              <label htmlFor="client-search" className="sr-only">Поиск клиента</label>
+              <input
+                id="client-search"
+                value={clientSearch}
+                onChange={(event) => setClientSearch(event.target.value)}
+                placeholder="Поиск клиента..."
+                className="min-h-11 min-w-0 flex-1 rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-base outline-none focus:border-violet-500 sm:text-sm"
+              />
+              <button
+                type="button"
+                disabled={!isHydrated}
+                onClick={(event) => {
+                  rememberDialogOpener(event.currentTarget);
+                  setNewClientName("");
+                  setNewClientWeight("");
+                  setClientCreationErrors({});
+                  setIsClientCreationOpen(true);
+                }}
+                className="min-h-11 shrink-0 rounded-xl bg-zinc-900 px-4 py-2.5 text-sm font-medium text-white active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Добавить клиента
+              </button>
+            </div>
           </div>
 
           <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
@@ -1114,6 +1189,114 @@ export default function Home() {
         )}
 
       </div>
+
+      {/* ADD CLIENT */}
+
+      {isClientCreationOpen && (
+        <div className="fixed inset-0 z-50 flex items-end bg-black/40 sm:items-center sm:justify-center sm:px-4">
+          <div
+            ref={clientCreationDialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="add-client-dialog-title"
+            tabIndex={-1}
+            className="w-full rounded-t-3xl bg-white p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] shadow-2xl sm:max-w-md sm:rounded-3xl sm:p-6"
+          >
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-xs text-zinc-500">Клиенты</p>
+                <h2 id="add-client-dialog-title" className="mt-1 text-xl font-semibold">
+                  Новый клиент
+                </h2>
+              </div>
+              <button
+                type="button"
+                aria-label="Закрыть окно добавления клиента"
+                onClick={closeClientCreationDialog}
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-xl text-zinc-400 active:bg-zinc-100"
+              >
+                ×
+              </button>
+            </div>
+
+            <form
+              className="mt-5 space-y-4"
+              noValidate
+              onSubmit={(event) => {
+                event.preventDefault();
+                addClient();
+              }}
+            >
+              <div>
+                <label htmlFor="new-client-name" className="text-xs font-medium text-zinc-700 sm:text-sm">
+                  Имя клиента
+                </label>
+                <input
+                  id="new-client-name"
+                  value={newClientName}
+                  maxLength={120}
+                  autoComplete="name"
+                  aria-invalid={clientCreationErrors.name ? true : undefined}
+                  aria-describedby={clientCreationErrors.name ? "new-client-name-error" : undefined}
+                  onChange={(event) => {
+                    setNewClientName(event.target.value);
+                    setClientCreationErrors((current) => ({ ...current, name: undefined }));
+                  }}
+                  className="mt-2 min-h-11 w-full rounded-xl border border-zinc-200 px-3 py-2.5 text-base outline-none focus:border-violet-500"
+                />
+                {clientCreationErrors.name && (
+                  <p id="new-client-name-error" role="alert" className="mt-1.5 text-sm text-red-600">
+                    {clientCreationErrors.name}
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <label htmlFor="new-client-weight" className="text-xs font-medium text-zinc-700 sm:text-sm">
+                  Начальный вес, кг
+                </label>
+                <input
+                  id="new-client-weight"
+                  type="number"
+                  inputMode="decimal"
+                  min="0"
+                  step="any"
+                  value={newClientWeight}
+                  aria-invalid={clientCreationErrors.startingWeight ? true : undefined}
+                  aria-describedby={clientCreationErrors.startingWeight ? "new-client-weight-error" : undefined}
+                  onChange={(event) => {
+                    setNewClientWeight(event.target.value);
+                    setClientCreationErrors((current) => ({ ...current, startingWeight: undefined }));
+                  }}
+                  className="mt-2 min-h-11 w-full rounded-xl border border-zinc-200 px-3 py-2.5 text-base outline-none focus:border-violet-500"
+                />
+                {clientCreationErrors.startingWeight && (
+                  <p id="new-client-weight-error" role="alert" className="mt-1.5 text-sm text-red-600">
+                    {clientCreationErrors.startingWeight}
+                  </p>
+                )}
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={closeClientCreationDialog}
+                  className="flex-1 rounded-xl border border-zinc-200 px-3 py-3 text-sm font-medium active:bg-zinc-50"
+                >
+                  Отмена
+                </button>
+                <button
+                  type="submit"
+                  disabled={!isHydrated}
+                  className="flex-1 rounded-xl bg-zinc-900 px-3 py-3 text-sm font-medium text-white active:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Добавить
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* ADD TRAINING */}
 

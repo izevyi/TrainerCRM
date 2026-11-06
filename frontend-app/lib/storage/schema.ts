@@ -7,6 +7,7 @@ import {
   type TrainerCrmSnapshotV1,
   type Training,
   type TrainingExercises,
+  type WeightMeasurement,
 } from "../domain/trainer-crm";
 
 type Guard<T> = (value: unknown) => value is T;
@@ -45,8 +46,34 @@ export function isClient(value: unknown): value is Client {
     isInteger(value.id) &&
     typeof value.name === "string" &&
     isFiniteNumber(value.weight) &&
-    isFiniteNumber(value.startWeight)
+    isFiniteNumber(value.startWeight) &&
+    (value.weightBeforeMeasurements === undefined ||
+      (isFiniteNumber(value.weightBeforeMeasurements) &&
+        value.weightBeforeMeasurements > 0)) &&
+    (value.nextWeightMeasurementSequence === undefined ||
+      (Number.isSafeInteger(value.nextWeightMeasurementSequence) &&
+        (value.nextWeightMeasurementSequence as number) > 0)) &&
+    (value.weightMeasurements === undefined ||
+      (isArrayOf(value.weightMeasurements, isWeightMeasurement) &&
+        new Set(value.weightMeasurements.map(({ id }) => id)).size === value.weightMeasurements.length &&
+        new Set(value.weightMeasurements.map(({ date }) => date)).size === value.weightMeasurements.length))
   );
+}
+
+function isStrictCalendarDate(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return false;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  return year >= 1 && month >= 1 && month <= 12 && day >= 1 &&
+    day <= new Date(Date.UTC(year, month, 0)).getUTCDate();
+}
+
+function isWeightMeasurement(value: unknown): value is WeightMeasurement {
+  return isRecord(value) && typeof value.id === "string" && value.id.length > 0 &&
+    isStrictCalendarDate(value.date) && isFiniteNumber(value.weight) && value.weight > 0;
 }
 
 export function isTraining(value: unknown): value is Training {

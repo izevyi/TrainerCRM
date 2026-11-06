@@ -15,6 +15,13 @@ import {
   selectTickIndices,
   summarizeTrend,
 } from "../lib/progress/chart-presentation";
+import {
+  addWeightMeasurement,
+  deleteWeightMeasurement,
+  deriveWeightGraphData,
+  editWeightMeasurement,
+  sortWeightMeasurements,
+} from "../lib/progress/weight-history";
 import { TrainerCrmRepository } from "../lib/storage/trainer-crm-repository";
 import {
   createClient,
@@ -28,11 +35,6 @@ import {
   updateExerciseSetValue,
   type NumericExerciseField,
 } from "../lib/training-editor";
-
-type WeightPoint = {
-  date: string;
-  weight: number;
-};
 
 type ClientDetailSection = "overview" | "trainings" | "progress";
 
@@ -57,20 +59,6 @@ const initialTrainingExercises: TrainingExercises = {
     { id: 1, name: "Приседания", sets: [{ id: 1, weight: 45, reps: 10 }, { id: 2, weight: 47.5, reps: 10 }, { id: 3, weight: 50, reps: 8 }] },
     { id: 2, name: "Жим ногами", sets: [{ id: 1, weight: 90, reps: 10 }, { id: 2, weight: 95, reps: 10 }] },
     { id: 3, name: "Тяга верхнего блока", sets: [{ id: 1, weight: 40, reps: 10 }, { id: 2, weight: 45, reps: 10 }] },
-  ],
-};
-
-const clientWeightHistory: Record<number, WeightPoint[]> = {
-  1: [
-    { date: "2026-07-18", weight: 76 },
-    { date: "2026-07-25", weight: 74.8 },
-    { date: "2026-08-01", weight: 73.6 },
-    { date: "2026-08-11", weight: 72.4 },
-  ],
-  2: [
-    { date: "2026-07-20", weight: 94 },
-    { date: "2026-08-03", weight: 92.5 },
-    { date: "2026-08-11", weight: 91.2 },
   ],
 };
 
@@ -371,6 +359,10 @@ export default function Home() {
   const [expandedWeightClientId, setExpandedWeightClientId] = useState<
     number | null
   >(null);
+  const [measurementDate, setMeasurementDate] = useState("");
+  const [measurementWeight, setMeasurementWeight] = useState("");
+  const [editingMeasurementId, setEditingMeasurementId] = useState<string | null>(null);
+  const [measurementErrors, setMeasurementErrors] = useState<{ date?: string; weight?: string }>({});
   const addDialogRef = useRef<HTMLDivElement | null>(null);
   const clientCreationDialogRef = useRef<HTMLDivElement | null>(null);
   const clientDialogRef = useRef<HTMLDivElement | null>(null);
@@ -410,22 +402,10 @@ export default function Home() {
   const weightProgress = selectedClient
     ? selectedClient.startWeight - selectedClient.weight
     : 0;
-  const selectedStaticWeightHistory = selectedClient
-    ? clientWeightHistory[selectedClient.id]
-    : undefined;
   const selectedWeightHistory = selectedClient
-    ? selectedStaticWeightHistory ?? [
-        { date: "2026-08-01", weight: selectedClient.startWeight },
-        { date: formatDate(new Date()), weight: selectedClient.weight },
-      ]
+    ? sortWeightMeasurements(selectedClient.weightMeasurements)
     : [];
-  const selectedWeightHistorySource = selectedStaticWeightHistory
-    ? "demo"
-    : "derived";
-  const weightChartObservations = selectedWeightHistory.map((point) => ({
-    date: point.date,
-    value: point.weight,
-  }));
+  const weightChartObservations = selectedClient ? deriveWeightGraphData(selectedClient) : [];
   const weightChartPoints = buildChartPoints(weightChartObservations);
   const weightTrend = summarizeTrend(weightChartObservations);
   const mobileWeightTicks = selectTickIndices(selectedWeightHistory.length, 3);
@@ -505,7 +485,50 @@ export default function Home() {
 
   function closeClientDialog() {
     setSelectedClient(null);
+    setEditingMeasurementId(null);
+    setMeasurementErrors({});
     restoreDialogFocus();
+  }
+
+  function replaceClient(updated: Client) {
+    setClients((current) => current.map((client) => client.id === updated.id ? updated : client));
+    setSelectedClient(updated);
+  }
+
+  function resetMeasurementForm() {
+    setMeasurementDate("");
+    setMeasurementWeight("");
+    setEditingMeasurementId(null);
+    setMeasurementErrors({});
+  }
+
+  function saveMeasurement() {
+    if (!selectedClient) return;
+    const input = { date: measurementDate, weight: Number(measurementWeight) };
+    const result = editingMeasurementId
+      ? editWeightMeasurement(selectedClient, editingMeasurementId, input)
+      : addWeightMeasurement(selectedClient, input);
+    if (!result.ok) {
+      setMeasurementErrors({ [result.field]: result.message });
+      return;
+    }
+    replaceClient(result.client);
+    resetMeasurementForm();
+  }
+
+  function startMeasurementEdit(id: string) {
+    const measurement = selectedClient?.weightMeasurements?.find((item) => item.id === id);
+    if (!measurement) return;
+    setEditingMeasurementId(id);
+    setMeasurementDate(measurement.date);
+    setMeasurementWeight(String(measurement.weight));
+    setMeasurementErrors({});
+  }
+
+  function removeMeasurement(id: string) {
+    if (!selectedClient || !window.confirm("Удалить это измерение веса?")) return;
+    replaceClient(deleteWeightMeasurement(selectedClient, id));
+    if (editingMeasurementId === id) resetMeasurementForm();
   }
 
   function resetTrainingEditorState() {
@@ -1549,11 +1572,56 @@ export default function Home() {
                   <div className="break-words text-sm font-semibold tabular-nums">{selectedClient.startWeight} → {selectedClient.weight} кг</div>
                 </div>
 
-                <p className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">
-                  {selectedWeightHistorySource === "demo"
-                    ? "Демонстрационная статическая история. Эти значения не являются сохранёнными измерениями клиента."
-                    : "Расчётное представление по начальному и текущему весу. История измерений не сохраняется."}
+                <p className="mt-3 rounded-xl bg-violet-50 px-3 py-2 text-xs leading-5 text-violet-900">
+                  Начальный вес: <strong>{selectedClient.startWeight} кг</strong>. Это исходная точка без даты, она не считается взвешиванием.
                 </p>
+
+                <form
+                  className="mt-4 rounded-2xl border border-zinc-200 p-3"
+                  noValidate
+                  onSubmit={(event) => { event.preventDefault(); saveMeasurement(); }}
+                >
+                  <h4 className="text-sm font-semibold">
+                    {editingMeasurementId ? "Изменить измерение" : "Добавить измерение"}
+                  </h4>
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                    <div>
+                      <label htmlFor="measurement-date" className="text-xs font-medium text-zinc-700">Дата</label>
+                      <input
+                        id="measurement-date"
+                        type="date"
+                        value={measurementDate}
+                        aria-invalid={measurementErrors.date ? true : undefined}
+                        aria-describedby={measurementErrors.date ? "measurement-date-error" : undefined}
+                        onChange={(event) => { setMeasurementDate(event.target.value); setMeasurementErrors((current) => ({ ...current, date: undefined })); }}
+                        className="mt-1 min-h-11 w-full rounded-xl border border-zinc-200 px-3 py-2 text-base outline-none focus:border-violet-500"
+                      />
+                      {measurementErrors.date && <p id="measurement-date-error" role="alert" className="mt-1 text-sm text-red-600">{measurementErrors.date}</p>}
+                    </div>
+                    <div>
+                      <label htmlFor="measurement-weight" className="text-xs font-medium text-zinc-700">Вес, кг</label>
+                      <input
+                        id="measurement-weight"
+                        type="number"
+                        inputMode="decimal"
+                        min="0"
+                        step="any"
+                        value={measurementWeight}
+                        aria-invalid={measurementErrors.weight ? true : undefined}
+                        aria-describedby={measurementErrors.weight ? "measurement-weight-error" : undefined}
+                        onChange={(event) => { setMeasurementWeight(event.target.value); setMeasurementErrors((current) => ({ ...current, weight: undefined })); }}
+                        className="mt-1 min-h-11 w-full rounded-xl border border-zinc-200 px-3 py-2 text-base outline-none focus:border-violet-500"
+                      />
+                      {measurementErrors.weight && <p id="measurement-weight-error" role="alert" className="mt-1 text-sm text-red-600">{measurementErrors.weight}</p>}
+                    </div>
+                  </div>
+                  <div className="mt-3 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                    {editingMeasurementId && <button type="button" onClick={resetMeasurementForm} className="min-h-11 rounded-xl border border-zinc-200 px-4 py-2 text-sm font-medium">Отмена</button>}
+                    <button type="submit" disabled={!isHydrated} className="min-h-11 rounded-xl bg-zinc-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-40">
+                      {editingMeasurementId ? "Сохранить" : "Добавить"}
+                    </button>
+                  </div>
+                </form>
 
                 {weightTrend.count === 0 ? (
                   <p className="mt-4 rounded-2xl bg-zinc-50 p-4 text-sm text-zinc-500">
@@ -1587,12 +1655,17 @@ export default function Home() {
                 )}
 
                 <div id="bodyweight-history" className="mt-4 space-y-2">
-                  {visibleWeightHistory.map((point, index) => (
-                    <div key={`${point.date}-${index}`} className="flex items-center justify-between gap-3 rounded-xl border border-zinc-100 px-3 py-2 text-sm">
+                  {visibleWeightHistory.map((point) => (
+                    <div key={point.id} className="flex flex-wrap items-center gap-2 rounded-xl border border-zinc-100 px-3 py-2 text-sm">
                       <span className="text-zinc-500">{formatShortDate(point.date)}</span>
-                      <span className="font-semibold tabular-nums">{point.weight} кг</span>
+                      <span className="mr-auto font-semibold tabular-nums">{point.weight} кг</span>
+                      <button type="button" onClick={() => startMeasurementEdit(point.id)} className="min-h-11 rounded-lg px-3 text-xs font-medium text-violet-700 hover:bg-violet-50">Изменить</button>
+                      <button type="button" onClick={() => removeMeasurement(point.id)} className="min-h-11 rounded-lg px-3 text-xs font-medium text-red-700 hover:bg-red-50">Удалить</button>
                     </div>
                   ))}
+                  {visibleWeightHistory.length === 0 && (
+                    <p className="rounded-xl bg-zinc-50 p-4 text-sm text-zinc-500">Сохранённых измерений пока нет.</p>
+                  )}
                 </div>
                 {selectedWeightHistory.length > 3 && (
                   <button

@@ -47,6 +47,32 @@ describe("TrainerCRM schema", () => {
     expect(isClients(value)).toBe(false);
   });
 
+  it("accepts valid optional measurements and legacy clients without history", () => {
+    expect(isClients([client])).toBe(true);
+    expect(isClients([{ ...client, weightMeasurements: [
+      { id: "wm-1-1", date: "2024-02-29", weight: 71.2 },
+    ] }])).toBe(true);
+  });
+
+  it.each<{ weightMeasurements: unknown }>([
+    { weightMeasurements: [{ id: "", date: "2026-01-01", weight: 70 }] },
+    { weightMeasurements: [{ id: "a", date: "2023-02-29", weight: 70 }] },
+    { weightMeasurements: [{ id: "a", date: "2026-01-01", weight: 0 }] },
+    { weightMeasurements: [{ id: "a", date: "2026-01-01", weight: 70 }, { id: "a", date: "2026-01-02", weight: 69 }] },
+    { weightMeasurements: [{ id: "a", date: "2026-01-01", weight: 70 }, { id: "b", date: "2026-01-01", weight: 69 }] },
+  ])("rejects invalid measurement history", ({ weightMeasurements }) => {
+    expect(isClients([{ ...client, weightMeasurements }])).toBe(false);
+  });
+
+  it("preserves trainings and exercises while normalizing data with history", () => {
+    const source: TrainerCrmData = {
+      clients: [{ ...client, weightMeasurements: [{ id: "wm-1-1", date: "2026-01-01", weight: 71 }] }],
+      trainings: [training],
+      exercises: { 10: [exercise] },
+    };
+    expect(normalizeOwnedReferences(source).data).toEqual(source);
+  });
+
   it("validates nested exercises and canonical numeric map keys", () => {
     expect(isTrainingExercises({ 10: [exercise] })).toBe(true);
     expect(isTrainingExercises({ nope: [exercise] })).toBe(false);

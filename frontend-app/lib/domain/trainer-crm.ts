@@ -1,10 +1,19 @@
 export const TRAINER_CRM_SCHEMA_VERSION = 1 as const;
 
+export type WeightMeasurement = {
+  id: string;
+  date: string;
+  weight: number;
+};
+
 export type Client = {
   id: number;
   name: string;
   weight: number;
   startWeight: number;
+  weightMeasurements?: WeightMeasurement[];
+  weightBeforeMeasurements?: number;
+  nextWeightMeasurementSequence?: number;
 };
 
 export type Training = {

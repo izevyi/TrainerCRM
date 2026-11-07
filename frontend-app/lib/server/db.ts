@@ -12,18 +12,22 @@ interface PoolConfig {
   allowExitOnIdle: boolean;
 }
 
-interface QueryResult<Row> {
+export interface DatabaseQueryResult<Row> {
   rowCount: number | null;
   rows: Row[];
 }
 
 interface PoolLike {
-  query(queryText: string): Promise<QueryResult<{ ok: number }>>;
+  query(queryText: string, values?: readonly unknown[]): Promise<DatabaseQueryResult<unknown>>;
 }
 
 type PoolConstructor = new (config: PoolConfig) => PoolLike;
 
 export type DatabaseHealthChecker = () => Promise<boolean>;
+export type DatabaseQuery = <Row>(
+  queryText: string,
+  values?: readonly unknown[],
+) => Promise<DatabaseQueryResult<Row>>;
 
 type DatabaseEnvironment = Readonly<Record<string, string | undefined>>;
 
@@ -79,7 +83,9 @@ export function createDatabaseHealthChecker(
         allowExitOnIdle: true,
       });
 
-      const result = await pool.query(HEALTH_QUERY);
+      const result = (await pool.query(HEALTH_QUERY)) as DatabaseQueryResult<{
+        ok: number;
+      }>;
       return result.rowCount === 1 && result.rows[0]?.ok === 1;
     } catch {
       return false;
@@ -87,8 +93,36 @@ export function createDatabaseHealthChecker(
   };
 }
 
-let productionChecker: DatabaseHealthChecker | undefined;
+let productionPool: PoolLike | undefined;
 const requireServerModule = createRequire(import.meta.url);
+
+function getProductionPool(): PoolLike | null {
+  const connectionString = readDatabaseUrl(process.env);
+  if (!connectionString) return null;
+
+  if (!productionPool) {
+    const { Pool } = requireServerModule("pg") as { Pool: PoolConstructor };
+    productionPool = new Pool({
+      connectionString,
+      max: 5,
+      connectionTimeoutMillis: 3_000,
+      idleTimeoutMillis: 10_000,
+      query_timeout: 3_000,
+      statement_timeout: 3_000,
+      allowExitOnIdle: true,
+    });
+  }
+  return productionPool;
+}
+
+export const queryDatabase: DatabaseQuery = async <Row>(
+  queryText: string,
+  values: readonly unknown[] = [],
+): Promise<DatabaseQueryResult<Row>> => {
+  const pool = getProductionPool();
+  if (!pool) throw new Error("DATABASE_UNAVAILABLE");
+  return (await pool.query(queryText, values)) as DatabaseQueryResult<Row>;
+};
 
 export async function checkDatabaseHealth(): Promise<boolean> {
   if (!readDatabaseUrl(process.env)) {
@@ -96,12 +130,8 @@ export async function checkDatabaseHealth(): Promise<boolean> {
   }
 
   try {
-    if (!productionChecker) {
-      const { Pool } = requireServerModule("pg") as { Pool: PoolConstructor };
-      productionChecker = createDatabaseHealthChecker(Pool, process.env);
-    }
-
-    return await productionChecker();
+    const result = await queryDatabase<{ ok: number }>(HEALTH_QUERY);
+    return result.rowCount === 1 && result.rows[0]?.ok === 1;
   } catch {
     return false;
   }

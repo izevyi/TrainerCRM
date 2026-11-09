@@ -8,6 +8,8 @@ type AppShellProps = {
   activeView: AppView;
   children: ReactNode;
   hasActiveDialog?: boolean;
+  isLoggingOut?: boolean;
+  onLogout?: () => void;
   onViewChange: (view: AppView) => void;
 };
 
@@ -52,6 +54,8 @@ export function AppShell({
   activeView,
   children,
   hasActiveDialog = false,
+  isLoggingOut = false,
+  onLogout,
   onViewChange,
 }: AppShellProps) {
   return (
@@ -71,6 +75,11 @@ export function AppShell({
           <div className="mt-8">
             <Navigation activeView={activeView} onViewChange={onViewChange} />
           </div>
+          {onLogout && (
+            <button type="button" disabled={isLoggingOut} onClick={onLogout} className="mt-8 min-h-11 w-full rounded-xl border border-zinc-200 px-4 py-2.5 text-sm font-medium text-zinc-700 hover:bg-zinc-100 disabled:opacity-50">
+              {isLoggingOut ? "Выходим…" : "Выйти"}
+            </button>
+          )}
         </aside>
 
         <main className="min-w-0 flex-1 pb-[calc(5.5rem+env(safe-area-inset-bottom))] md:pb-0">
@@ -83,7 +92,10 @@ export function AppShell({
         inert={hasActiveDialog || undefined}
         className="fixed inset-x-0 bottom-0 z-40 border-t border-zinc-200 bg-white/95 pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] shadow-[0_-8px_30px_rgba(24,24,27,0.08)] backdrop-blur md:hidden"
       >
-        <Navigation activeView={activeView} onViewChange={onViewChange} />
+        <div className="flex gap-2">
+          <div className="min-w-0 flex-1"><Navigation activeView={activeView} onViewChange={onViewChange} /></div>
+          {onLogout && <button type="button" aria-label="Выйти" disabled={isLoggingOut} onClick={onLogout} className="min-h-11 rounded-xl border border-zinc-200 px-3 text-sm font-medium text-zinc-700 disabled:opacity-50">{isLoggingOut ? "…" : "Выйти"}</button>}
+        </div>
       </div>
     </div>
   );

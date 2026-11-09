@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { AppShell, type AppView } from "../components/app-shell";
+import { AuthGate } from "../components/auth-gate";
 import { ClientProgressSection } from "../components/client-progress-section";
 import type {
   Client,
@@ -235,7 +236,7 @@ function createDefaultExercises() {
   ];
 }
 
-export default function Home() {
+function TrainerCrm({ onLogout, isLoggingOut }: { onLogout: () => void; isLoggingOut: boolean }) {
   const today = new Date();
 
   const [isHydrated, setIsHydrated] = useState(false);
@@ -846,6 +847,8 @@ export default function Home() {
     <AppShell
       activeView={activeView}
       hasActiveDialog={activeDialog !== null}
+      isLoggingOut={isLoggingOut}
+      onLogout={onLogout}
       onViewChange={setActiveView}
     >
 
@@ -1925,5 +1928,13 @@ export default function Home() {
       )}
 
     </AppShell>
+  );
+}
+
+export default function Home() {
+  return (
+    <AuthGate>
+      {(onLogout, isLoggingOut) => <TrainerCrm onLogout={onLogout} isLoggingOut={isLoggingOut} />}
+    </AuthGate>
   );
 }

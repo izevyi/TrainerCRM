@@ -20,7 +20,7 @@ type PasswordRow = {
   email_identity_id: string;
   tenant_id: string;
   password_hash: string;
-  password_changed_at: Date | string;
+  password_changed_at: string;
 };
 
 type SessionRow = {
@@ -116,7 +116,9 @@ export async function loginTrainer(
 
   try {
     const resolved = await query<PasswordRow>(
-      "SELECT * FROM authn.resolve_trainer_password($1::text)",
+      `SELECT trainer_subject_id, email_identity_id, tenant_id, password_hash,
+              password_changed_at::text AS password_changed_at
+         FROM authn.resolve_trainer_password($1::text)`,
       [canonicalEmail],
     );
     if (resolved.rowCount !== 1 || resolved.rows.length !== 1) {

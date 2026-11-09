@@ -18,7 +18,10 @@ const IDs = {
   tenant: "33333333-3333-4333-8333-333333333333",
   session: "44444444-4444-4444-8444-444444444444",
 };
-const changedAt = "2026-11-01T00:00:00.000Z";
+const changedAt = "2026-11-01 07:00:00.123456+07";
+const resolvePasswordQuery = `SELECT trainer_subject_id, email_identity_id, tenant_id, password_hash,
+              password_changed_at::text AS password_changed_at
+         FROM authn.resolve_trainer_password($1::text)`;
 
 function sessionRow() {
   return {
@@ -47,11 +50,31 @@ describe("trainer authentication service", () => {
     expect(result.token).toMatch(/^[A-Za-z0-9_-]{43}$/);
     expect(result.trainerId).toBe(IDs.trainer);
     expect(query).toHaveBeenNthCalledWith(1,
-      "SELECT * FROM authn.resolve_trainer_password($1::text)", ["trainer@example.com"]);
+      resolvePasswordQuery, ["trainer@example.com"]);
     expect(query).toHaveBeenNthCalledWith(2,
       "SELECT * FROM authn.create_trainer_session($1::uuid, $2::timestamptz, $3::bytea)",
       [IDs.trainer, changedAt, expect.any(Buffer)]);
     expect((query as unknown as ReturnType<typeof vi.fn>).mock.calls[1][2]).toBeUndefined();
+  });
+
+  it("preserves PostgreSQL timestamp precision when creating the session", async () => {
+    const passwordHash = await hashTrainerPassword("correct horse");
+    const postgresTimestamp = "2026-11-01 07:00:00.987654+07";
+    const query = vi.fn()
+      .mockResolvedValueOnce({ rowCount: 1, rows: [{
+        trainer_subject_id: IDs.trainer, email_identity_id: IDs.identity,
+        tenant_id: IDs.tenant, password_hash: passwordHash,
+        password_changed_at: postgresTimestamp,
+      }] })
+      .mockResolvedValueOnce({ rowCount: 1, rows: [sessionRow()] }) as unknown as DatabaseQuery;
+
+    await loginTrainer("trainer@example.com", "correct horse", query);
+
+    expect(query).toHaveBeenNthCalledWith(1, resolvePasswordQuery, ["trainer@example.com"]);
+    expect(query).toHaveBeenNthCalledWith(2,
+      "SELECT * FROM authn.create_trainer_session($1::uuid, $2::timestamptz, $3::bytea)",
+      [IDs.trainer, postgresTimestamp, expect.any(Buffer)]);
+    expect(new Date(postgresTimestamp).toISOString()).toBe("2026-11-01T00:00:00.987Z");
   });
 
   it("uses a generic failure and never creates a session for a wrong password", async () => {

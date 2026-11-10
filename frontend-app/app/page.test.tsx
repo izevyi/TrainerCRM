@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import Home from "./page";
 import { login, logout, verifySession } from "../lib/auth/client-auth";
+import { PilotWorkspace, ServerClients } from "../components/server-clients";
 
 const trainer = {
   trainerId: "11111111-1111-4111-8111-111111111111",
@@ -21,6 +22,24 @@ function fetchResponse(status: number, body?: unknown) {
 }
 
 describe("trainer authentication page", () => {
+  it("renders the server client loading state without legacy client records", () => {
+    const html = renderToStaticMarkup(<ServerClients onAuthenticationFailure={() => undefined} />);
+    expect(html).toContain("Загружаем клиентов");
+    expect(html).not.toContain("Анна Петрова");
+  });
+  it("renders an authenticated pilot workspace with no navigation into legacy data", () => {
+    const html = renderToStaticMarkup(
+      <PilotWorkspace trainerId={trainer.trainerId} onLogout={() => undefined} isLoggingOut={false} onAuthenticationFailure={() => undefined} />,
+    );
+
+    expect(html).toContain("Пилотный кабинет тренера");
+    expect(html).toContain("Сохранены на сервере");
+    expect(html).toContain("остаются доступны пользователю этого браузера через инструменты разработчика");
+    expect(html).not.toContain("Основная навигация");
+    expect(html).not.toContain("Анна Петрова");
+    expect(html).not.toContain("Добавить тренировку");
+    expect(html).not.toContain("Замеры");
+  });
   it("renders only a session-loading state before CRM content", () => {
     const html = renderToStaticMarkup(<Home />);
 

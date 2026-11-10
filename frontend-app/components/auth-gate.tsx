@@ -6,7 +6,7 @@ import { login, logout, verifySession, type TrainerSession } from "../lib/auth/c
 type AuthState =
   | { status: "checking" }
   | { status: "anonymous" }
-  | { status: "authenticated"; trainer: TrainerSession };
+  | { status: "authenticated"; trainer: TrainerSession; generation: number };
 
 type Errors = { email?: string; password?: string; form?: string };
 
@@ -21,25 +21,38 @@ function validate(email: string, password: string): Errors {
   return errors;
 }
 
-export function AuthGate({ children }: { children: (logoutAction: () => void, isLoggingOut: boolean) => ReactNode }) {
+export function AuthGate({ children }: { children: (logoutAction: () => void, isLoggingOut: boolean, trainer: TrainerSession, authenticationFailed: () => void) => ReactNode }) {
   const [auth, setAuth] = useState<AuthState>({ status: "checking" });
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [errors, setErrors] = useState<Errors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [logoutError, setLogoutError] = useState<string | null>(null);
   const submittingRef = useRef(false);
+  const loggingOutRef = useRef(false);
+  const mountedRef = useRef(false);
+  const sessionGenerationRef = useRef(0);
+  const trainerIdRef = useRef<string | null>(null);
 
   useEffect(() => {
+    mountedRef.current = true;
+    const generation = ++sessionGenerationRef.current;
     let active = true;
     void verifySession().then((result) => {
-      if (!active) return;
-      setAuth(result.ok ? { status: "authenticated", trainer: result.trainer } : { status: "anonymous" });
+      if (!active || !mountedRef.current || sessionGenerationRef.current !== generation) return;
+      trainerIdRef.current = result.ok ? result.trainer.trainerId : null;
+      setAuth(result.ok ? { status: "authenticated", trainer: result.trainer, generation } : { status: "anonymous" });
       if (!result.ok && result.kind === "unavailable") {
         setErrors({ form: "Не удалось проверить вход. Проверьте подключение и попробуйте ещё раз." });
       }
     });
-    return () => { active = false; };
+    return () => {
+      active = false;
+      mountedRef.current = false;
+      trainerIdRef.current = null;
+      sessionGenerationRef.current += 1;
+    };
   }, []);
 
   useEffect(() => {
@@ -64,7 +77,7 @@ export function AuthGate({ children }: { children: (logoutAction: () => void, is
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (submittingRef.current) return;
+    if (submittingRef.current || loggingOutRef.current) return;
     const validation = validate(email, password);
     if (Object.keys(validation).length > 0) {
       setErrors(validation);
@@ -72,14 +85,17 @@ export function AuthGate({ children }: { children: (logoutAction: () => void, is
     }
 
     submittingRef.current = true;
+    const generation = ++sessionGenerationRef.current;
     setIsSubmitting(true);
     setErrors({});
     const result = await login(email.trim(), password);
+    if (!mountedRef.current || sessionGenerationRef.current !== generation) return;
     setPassword("");
     submittingRef.current = false;
     setIsSubmitting(false);
     if (result.ok) {
-      setAuth({ status: "authenticated", trainer: result.trainer });
+      trainerIdRef.current = result.trainer.trainerId;
+      setAuth({ status: "authenticated", trainer: result.trainer, generation });
       return;
     }
     const form = result.kind === "unauthorized"
@@ -91,14 +107,32 @@ export function AuthGate({ children }: { children: (logoutAction: () => void, is
   }
 
   async function logoutAction() {
-    if (isLoggingOut) return;
+    if (loggingOutRef.current) return;
+    loggingOutRef.current = true;
+    const generation = ++sessionGenerationRef.current;
     setIsLoggingOut(true);
+    setLogoutError(null);
     const completed = await logout();
+    if (!mountedRef.current || !loggingOutRef.current) return;
+    loggingOutRef.current = false;
     setIsLoggingOut(false);
-    setAuth({ status: "anonymous" });
-    if (!completed) {
-      setErrors({ form: "Сеанс завершён в этом окне. Сервер не подтвердил выход — проверьте подключение." });
+    if (sessionGenerationRef.current !== generation) return;
+    if (completed) {
+      trainerIdRef.current = null;
+      setAuth({ status: "anonymous" });
+      return;
     }
+    setLogoutError("Сервер не подтвердил выход. Состояние сеанса неизвестно — проверьте подключение и попробуйте выйти снова.");
+  }
+
+  function authenticationFailed(expectedTrainerId: string, expectedGeneration: number) {
+    setAuth((current) => {
+      if (current.status !== "authenticated" || current.generation !== expectedGeneration || current.trainer.trainerId !== expectedTrainerId) return current;
+      sessionGenerationRef.current += 1;
+      trainerIdRef.current = null;
+      setErrors({ form: "Сеанс истёк. Войдите снова." });
+      return { status: "anonymous" };
+    });
   }
 
   if (auth.status === "checking") {
@@ -109,7 +143,24 @@ export function AuthGate({ children }: { children: (logoutAction: () => void, is
     );
   }
 
-  if (auth.status === "authenticated") return <>{children(logoutAction, isLoggingOut)}</>;
+  if (auth.status === "anonymous" && isLoggingOut) {
+    return (
+      <main className="auth-page" aria-busy="true">
+        <div className="auth-loader" role="status"><span className="auth-spinner" aria-hidden="true" />Завершаем сеанс…</div>
+      </main>
+    );
+  }
+
+  if (auth.status === "authenticated") {
+    const generation = auth.generation;
+    const trainerId = auth.trainer.trainerId;
+    return <>
+      {logoutError && <div className="mx-auto mt-4 w-[calc(100%-2rem)] max-w-5xl rounded-xl bg-red-50 p-3 text-sm text-red-700" role="alert">{logoutError}</div>}
+      {/* The callbacks intentionally read mutable request/session refs only when invoked. */}
+      {/* eslint-disable-next-line react-hooks/refs */}
+      {children(logoutAction, isLoggingOut, auth.trainer, () => authenticationFailed(trainerId, generation))}
+    </>;
+  }
 
   return (
     <main className="auth-page">

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { AppShell, type AppView } from "../components/app-shell";
 import { AuthGate } from "../components/auth-gate";
 import { ClientProgressSection } from "../components/client-progress-section";
+import { PilotWorkspace, ServerClients } from "../components/server-clients";
 import type {
   Client,
   TrainerCrmData,
@@ -236,7 +237,7 @@ function createDefaultExercises() {
   ];
 }
 
-function TrainerCrm({ onLogout, isLoggingOut }: { onLogout: () => void; isLoggingOut: boolean }) {
+function LegacyTrainerCrm({ onLogout, isLoggingOut, onAuthenticationFailure }: { onLogout: () => void; isLoggingOut: boolean; onAuthenticationFailure: () => void }) {
   const today = new Date();
 
   const [isHydrated, setIsHydrated] = useState(false);
@@ -336,9 +337,6 @@ function TrainerCrm({ onLogout, isLoggingOut }: { onLogout: () => void; isLoggin
   const [selectedClient, setSelectedClient] =
     useState<Client | null>(null);
 
-  const [clientSearch, setClientSearch] =
-    useState("");
-
   const [isAddModalOpen, setIsAddModalOpen] =
     useState(false);
   const [isClientCreationOpen, setIsClientCreationOpen] = useState(false);
@@ -390,10 +388,6 @@ function TrainerCrm({ onLogout, isLoggingOut }: { onLogout: () => void; isLoggin
       .sort((a, b) =>
         a.time.localeCompare(b.time)
       );
-
-  const filteredClients = clients.filter((client) =>
-    client.name.toLowerCase().includes(clientSearch.toLowerCase().trim())
-  );
 
   const clientTrainings = selectedClient
     ? trainings
@@ -1039,64 +1033,7 @@ function TrainerCrm({ onLogout, isLoggingOut }: { onLogout: () => void; isLoggin
 
         {/* CLIENTS */}
         {activeView === "clients" && (
-        <section className="mt-4 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-zinc-200 sm:mt-8 sm:rounded-3xl sm:p-5">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <p className="text-xs text-zinc-500 sm:text-sm">Быстрый доступ</p>
-              <h2 className="mt-1 text-xl font-semibold sm:text-2xl">Клиенты</h2>
-            </div>
-            <div className="flex w-full flex-col gap-2 sm:max-w-md sm:flex-row">
-              <label htmlFor="client-search" className="sr-only">Поиск клиента</label>
-              <input
-                id="client-search"
-                value={clientSearch}
-                onChange={(event) => setClientSearch(event.target.value)}
-                placeholder="Поиск клиента..."
-                className="min-h-11 min-w-0 flex-1 rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-base outline-none focus:border-violet-500 sm:text-sm"
-              />
-              <button
-                type="button"
-                disabled={!isHydrated}
-                onClick={(event) => {
-                  rememberDialogOpener(event.currentTarget);
-                  setNewClientName("");
-                  setNewClientWeight("");
-                  setClientCreationErrors({});
-                  setIsClientCreationOpen(true);
-                }}
-                className="min-h-11 shrink-0 rounded-xl bg-zinc-900 px-4 py-2.5 text-sm font-medium text-white active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                Добавить клиента
-              </button>
-            </div>
-          </div>
-
-          <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-            {filteredClients.map((client) => {
-              const count = trainings.filter((training) => training.clientId === client.id).length;
-              return (
-                <button
-                  key={client.id}
-                  onClick={(event) => {
-                    rememberDialogOpener(event.currentTarget);
-                    setClientDetailSection("overview");
-                    setSelectedClient(client);
-                  }}
-                  className="flex items-center gap-3 rounded-2xl border border-zinc-200 p-3 text-left transition hover:bg-zinc-50 active:scale-[0.99]"
-                >
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-zinc-900 text-sm font-semibold text-white">
-                    {client.name.split(" ").map((part) => part[0]).slice(0, 2).join("")}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-semibold">{client.name}</div>
-                    <div className="mt-0.5 text-xs text-zinc-500">{count} {getTrainingWord(count)}</div>
-                  </div>
-                  <div className="text-lg text-zinc-300">→</div>
-                </button>
-              );
-            })}
-          </div>
-        </section>
+          <ServerClients onAuthenticationFailure={onAuthenticationFailure} />
         )}
 
         {/* SCHEDULE HEADER */}
@@ -1931,10 +1868,15 @@ function TrainerCrm({ onLogout, isLoggingOut }: { onLogout: () => void; isLoggin
   );
 }
 
+// Kept in source for a future explicit migration, but never mounted by the pilot route.
+void LegacyTrainerCrm;
+
 export default function Home() {
   return (
     <AuthGate>
-      {(onLogout, isLoggingOut) => <TrainerCrm onLogout={onLogout} isLoggingOut={isLoggingOut} />}
+      {(onLogout, isLoggingOut, trainer, authenticationFailed) => (
+        <PilotWorkspace trainerId={trainer.trainerId} onLogout={onLogout} isLoggingOut={isLoggingOut} onAuthenticationFailure={authenticationFailed} />
+      )}
     </AuthGate>
   );
 }

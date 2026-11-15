@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 
-export type AppView = "schedule" | "clients";
+export type AppView = "schedule" | "clients" | "workouts";
 
 type AppShellProps = {
   activeView: AppView;
@@ -16,6 +16,7 @@ type AppShellProps = {
 const destinations: { id: AppView; label: string; icon: string }[] = [
   { id: "schedule", label: "Расписание", icon: "▦" },
   { id: "clients", label: "Клиенты", icon: "●" },
+  { id: "workouts", label: "Тренировки", icon: "◆" },
 ];
 
 function Navigation({

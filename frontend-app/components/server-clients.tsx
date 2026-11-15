@@ -4,6 +4,7 @@ import { type FormEvent, useEffect, useRef, useState } from "react";
 import { listClients, postClient, type ServerClient } from "../lib/clients/client-api";
 import { AppShell, type AppView } from "./app-shell";
 import { ServerCalendar } from "./server-calendar";
+import { ServerWorkouts } from "./server-workouts";
 
 type Props = { onAuthenticationFailure: () => void };
 
@@ -18,7 +19,8 @@ export function PilotWorkspace({ trainerId, onLogout, isLoggingOut, onAuthentica
     <AppShell activeView={activeView} onViewChange={setActiveView} onLogout={onLogout} isLoggingOut={isLoggingOut}>
       <div className="mx-auto w-full max-w-5xl">
         {activeView === "schedule" && <ServerCalendar key={`calendar-${trainerId}`} onAuthenticationFailure={onAuthenticationFailure} />}
-        {activeView === "clients" && <div className="px-3 py-4 sm:px-6 sm:py-6"><header><p className="text-xs font-medium uppercase tracking-[0.16em] text-violet-600">Пилотный кабинет тренера</p><h1 className="mt-1 text-2xl font-semibold">Клиенты</h1></header><ServerClients key={`clients-${trainerId}`} onAuthenticationFailure={onAuthenticationFailure} /><section className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"><h2 className="font-semibold">Функции пилота</h2><p className="mt-1">Тренировки, упражнения, прогресс и замеры пока отключены.</p><p className="mt-2 text-xs text-amber-800">Прежние локальные записи не загружаются, не объединяются с серверными клиентами и не изменяются.</p></section></div>}
+        {activeView === "clients" && <div className="px-3 py-4 sm:px-6 sm:py-6"><header><p className="text-xs font-medium uppercase tracking-[0.16em] text-violet-600">Пилотный кабинет тренера</p><h1 className="mt-1 text-2xl font-semibold">Клиенты</h1></header><ServerClients key={`clients-${trainerId}`} onAuthenticationFailure={onAuthenticationFailure} /><section className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"><h2 className="font-semibold">Данные пилота</h2><p className="mt-1">Тренировки доступны в отдельном разделе. Прогресс и замеры пока отключены.</p><p className="mt-2 text-xs text-amber-800">Прежние локальные записи не загружаются, не объединяются с серверными клиентами и не изменяются.</p></section></div>}
+        {activeView === "workouts" && <ServerWorkouts key={`workouts-${trainerId}`} onAuthenticationFailure={onAuthenticationFailure} />}
       </div>
     </AppShell>
   );

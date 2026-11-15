@@ -5,6 +5,7 @@ import Home from "./page";
 import { login, logout, verifySession } from "../lib/auth/client-auth";
 import { PilotWorkspace, ServerClients } from "../components/server-clients";
 import { ServerCalendar } from "../components/server-calendar";
+import { ServerWorkouts } from "../components/server-workouts";
 
 const trainer = {
   trainerId: "11111111-1111-4111-8111-111111111111",
@@ -45,6 +46,12 @@ describe("trainer authentication page", () => {
     expect(html).toContain("Загружаем расписание");
     expect(html).toContain("Сегодня");
     expect(html).not.toContain("Анна Петрова");
+  });
+  it("renders the server workout section without legacy workout data", () => {
+    const html = renderToStaticMarkup(<ServerWorkouts onAuthenticationFailure={() => undefined} />);
+    expect(html).toContain("Тренировки");
+    expect(html).toContain("Загружаем историю тренировок");
+    expect(html).not.toContain("Приседания");
   });
   it("renders only a session-loading state before CRM content", () => {
     const html = renderToStaticMarkup(<Home />);

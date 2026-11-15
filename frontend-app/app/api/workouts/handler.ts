@@ -63,7 +63,7 @@ export function validWorkoutInput(value: unknown): value is WorkoutInput {
       if (typeof rawSet !== "object" || rawSet === null || Array.isArray(rawSet)) return false;
       const set = rawSet as Record<string, unknown>;
       return exactKeys(set, ["weight", "reps"]) && typeof set.weight === "number" &&
-        Number.isFinite(set.weight) && set.weight >= 0 && set.weight <= 1000 && Number.isInteger(set.weight * 1000) &&
+        Number.isFinite(set.weight) && set.weight >= 0 && set.weight <= 1000 && Number.isInteger(set.weight * 2) &&
         typeof set.reps === "number" && Number.isInteger(set.reps) && set.reps >= 0 && set.reps <= 10000;
     });
   });

@@ -3,6 +3,7 @@
 import { type FormEvent, useEffect, useRef, useState } from "react";
 import { listClients, type ServerClient } from "../lib/clients/client-api";
 import { listWorkouts, saveWorkout, type Workout, type WorkoutInput } from "../lib/workouts/workout-api";
+import { formatWorkoutWeight, parseWorkoutNumber, workoutNumberError, type WorkoutNumberField } from "../lib/workouts/workout-editor-numbers";
 
 type DraftSet = { key: number; weight: string; reps: string };
 type DraftExercise = { key: number; name: string; sets: DraftSet[] };
@@ -29,6 +30,7 @@ export function ServerWorkouts({ onAuthenticationFailure }: Props) {
   const [draft, setDraft] = useState<Draft | null>(null);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [numberErrors, setNumberErrors] = useState<Record<string, string>>({});
 
   useEffect(() => { authFailureRef.current = onAuthenticationFailure; }, [onAuthenticationFailure]);
   useEffect(() => {
@@ -67,7 +69,8 @@ export function ServerWorkouts({ onAuthenticationFailure }: Props) {
   function mayDiscard() { return !dirty || window.confirm("Есть несохранённые изменения. Отменить их?"); }
   function edit(workout: Workout) {
     if (!mayDiscard()) return;
-    setDraft({ id: workout.id, date: workout.date, time: workout.time.slice(0, 5), type: workout.type, completed: workout.completed, exercises: workout.exercises.map((exercise) => ({ key: nextKey.current++, name: exercise.name, sets: exercise.sets.map((set) => ({ key: nextKey.current++, weight: String(set.weight), reps: String(set.reps) })) })) });
+    setDraft({ id: workout.id, date: workout.date, time: workout.time.slice(0, 5), type: workout.type, completed: workout.completed, exercises: workout.exercises.map((exercise) => ({ key: nextKey.current++, name: exercise.name, sets: exercise.sets.map((set) => ({ key: nextKey.current++, weight: formatWorkoutWeight(set.weight), reps: String(set.reps) })) })) });
+    setNumberErrors({});
     setDirty(false); setMessage(null);
   }
   function update(change: (current: Draft) => Draft) { setDraft((current) => current ? change(current) : current); setDirty(true); setMessage(null); }
@@ -77,9 +80,22 @@ export function ServerWorkouts({ onAuthenticationFailure }: Props) {
 
   function input(): WorkoutInput | null {
     if (!draft || !draft.date || !draft.time || !draft.type.trim() || draft.type.trim().length > 120 || draft.exercises.length > 50) return null;
-    const exercises = draft.exercises.map((exercise) => ({ name: exercise.name.trim(), sets: exercise.sets.map((set) => ({ weight: Number(set.weight), reps: Number(set.reps) })) }));
-    if (exercises.some((exercise) => !exercise.name || exercise.name.length > 120 || exercise.sets.length > 20 || exercise.sets.some((set) => !Number.isFinite(set.weight) || set.weight < 0 || set.weight > 1000 || !Number.isInteger(set.weight * 1000) || !Number.isInteger(set.reps) || set.reps < 0 || set.reps > 10000))) return null;
+    const errors: Record<string, string> = {};
+    const exercises = draft.exercises.map((exercise) => ({ name: exercise.name.trim(), sets: exercise.sets.map((set) => {
+      const weight = parseWorkoutNumber("weight", set.weight);
+      const reps = parseWorkoutNumber("reps", set.reps);
+      if (weight === null) errors[`${set.key}-weight`] = workoutNumberError("weight");
+      if (reps === null) errors[`${set.key}-reps`] = workoutNumberError("reps");
+      return { weight: weight ?? Number.NaN, reps: reps ?? Number.NaN };
+    }) }));
+    setNumberErrors(errors);
+    if (Object.keys(errors).length || exercises.some((exercise) => !exercise.name || exercise.name.length > 120 || exercise.sets.length > 20)) return null;
     return { clientId, appointmentId: null, date: draft.date, time: draft.time, type: draft.type.trim(), completed: draft.completed, caloriesBurned: null, exercises };
+  }
+
+  function updateSetNumber(exerciseKey: number, setKey: number, field: WorkoutNumberField, value: string) {
+    setNumberErrors((current) => { const next = { ...current }; delete next[`${setKey}-${field}`]; return next; });
+    updateExercise(exerciseKey, (current) => ({ ...current, sets: current.sets.map((item) => item.key === setKey ? { ...item, [field]: value } : item) }));
   }
 
   async function submit(event: FormEvent) {
@@ -113,7 +129,7 @@ export function ServerWorkouts({ onAuthenticationFailure }: Props) {
       <label className="mt-3 flex min-h-11 items-center gap-2 text-sm"><input type="checkbox" checked={draft.completed} disabled={saving} onChange={(event) => update((current) => ({ ...current, completed: event.target.checked }))} />Тренировка завершена</label>
       <div className="mt-4 flex items-center justify-between"><h3 className="font-semibold">Упражнения</h3><button type="button" disabled={saving || draft.exercises.length >= 50} onClick={addExercise} className="min-h-11 rounded-xl border border-zinc-200 px-3 text-sm font-medium">Добавить упражнение</button></div>
       <div className="mt-3 space-y-3">{draft.exercises.map((exercise, exerciseIndex) => <fieldset key={exercise.key} className="rounded-2xl border border-zinc-200 p-3"><legend className="sr-only">Упражнение {exerciseIndex + 1}</legend><div className="flex gap-2"><label className="min-w-0 flex-1"><span className="sr-only">Название упражнения {exerciseIndex + 1}</span><input value={exercise.name} maxLength={120} disabled={saving} onChange={(event) => updateExercise(exercise.key, (current) => ({ ...current, name: event.target.value }))} className="min-h-11 w-full rounded-xl border border-zinc-200 px-3 font-medium" /></label><button type="button" disabled={saving} aria-label={`Удалить упражнение ${exercise.name}`} onClick={() => removeExercise(exercise.key)} className="min-h-11 rounded-xl px-3 text-sm text-red-700">Удалить</button></div>
-        <div className="mt-3 space-y-2">{exercise.sets.map((set, setIndex) => <div key={set.key} className="grid grid-cols-[1fr_1fr_auto] items-end gap-2"><label className="text-xs text-zinc-500">Вес, кг<input type="number" inputMode="decimal" min="0" max="1000" step="0.001" value={set.weight} disabled={saving} onChange={(event) => updateExercise(exercise.key, (current) => ({ ...current, sets: current.sets.map((item) => item.key === set.key ? { ...item, weight: event.target.value } : item) }))} className="mt-1 min-h-11 w-full rounded-xl border border-zinc-200 px-2 text-base" /></label><label className="text-xs text-zinc-500">Повторения<input type="number" inputMode="numeric" min="0" max="10000" step="1" value={set.reps} disabled={saving} onChange={(event) => updateExercise(exercise.key, (current) => ({ ...current, sets: current.sets.map((item) => item.key === set.key ? { ...item, reps: event.target.value } : item) }))} className="mt-1 min-h-11 w-full rounded-xl border border-zinc-200 px-2 text-base" /></label><button type="button" disabled={saving} aria-label={`Удалить подход ${setIndex + 1}`} onClick={() => updateExercise(exercise.key, (current) => ({ ...current, sets: current.sets.filter((item) => item.key !== set.key) }))} className="min-h-11 rounded-xl px-3 text-red-700">×</button></div>)}</div>
+      <div className="mt-3 space-y-2">{exercise.sets.map((set, setIndex) => <div key={set.key} className="grid grid-cols-[1fr_1fr_auto] items-start gap-2"><label className="text-xs text-zinc-500">Вес, кг<input type="text" inputMode="decimal" min="0" max="1000" step="0.5" value={set.weight} disabled={saving} aria-invalid={numberErrors[`${set.key}-weight`] ? true : undefined} onChange={(event) => updateSetNumber(exercise.key, set.key, "weight", event.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-zinc-200 px-2 text-base" />{numberErrors[`${set.key}-weight`] && <span role="alert" className="mt-1 block text-xs text-red-600">{numberErrors[`${set.key}-weight`]}</span>}</label><label className="text-xs text-zinc-500">Повторения<input type="text" inputMode="numeric" min="0" max="10000" step="1" value={set.reps} disabled={saving} aria-invalid={numberErrors[`${set.key}-reps`] ? true : undefined} onChange={(event) => updateSetNumber(exercise.key, set.key, "reps", event.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-zinc-200 px-2 text-base" />{numberErrors[`${set.key}-reps`] && <span role="alert" className="mt-1 block text-xs text-red-600">{numberErrors[`${set.key}-reps`]}</span>}</label><button type="button" disabled={saving} aria-label={`Удалить подход ${setIndex + 1}`} onClick={() => updateExercise(exercise.key, (current) => ({ ...current, sets: current.sets.filter((item) => item.key !== set.key) }))} className="min-h-11 rounded-xl px-3 text-red-700">×</button></div>)}</div>
         <button type="button" disabled={saving || exercise.sets.length >= 20} onClick={() => updateExercise(exercise.key, (current) => ({ ...current, sets: [...current.sets, { key: nextKey.current++, weight: "0", reps: "0" }] }))} className="mt-3 min-h-11 rounded-xl border border-zinc-200 px-3 text-sm">Добавить подход</button></fieldset>)}</div>
       <button type="submit" disabled={saving} className="mt-5 min-h-11 w-full rounded-xl bg-violet-600 px-4 font-medium text-white disabled:opacity-40">{saving ? "Сохраняем…" : "Сохранить тренировку"}</button>
     </form>}

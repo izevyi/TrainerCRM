@@ -17,7 +17,8 @@ describe("workout collection API", () => {
     expect(validWorkoutInput(body)).toBe(true);
     expect(validWorkoutInput({ ...body, trainerId: crypto.randomUUID() })).toBe(false);
     expect(validWorkoutInput({ ...body, date: "2026-02-31" })).toBe(false);
-    expect(validWorkoutInput({ ...body, exercises: [{ name: "x", sets: [{ weight: 0.0001, reps: 1 }] }] })).toBe(false);
+    expect(validWorkoutInput({ ...body, exercises: [{ name: "x", sets: [{ weight: 40.25, reps: 1 }] }] })).toBe(false);
+    expect(validWorkoutInput({ ...body, exercises: [{ name: "x", sets: [{ weight: 40.5, reps: 1.5 }] }] })).toBe(false);
     expect(validWorkoutInput({ ...body, exercises: Array.from({ length: 51 }, () => ({ name: "x", sets: [] })) })).toBe(false);
   });
 

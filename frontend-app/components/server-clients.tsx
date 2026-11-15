@@ -2,6 +2,8 @@
 
 import { type FormEvent, useEffect, useRef, useState } from "react";
 import { listClients, postClient, type ServerClient } from "../lib/clients/client-api";
+import { AppShell, type AppView } from "./app-shell";
+import { ServerCalendar } from "./server-calendar";
 
 type Props = { onAuthenticationFailure: () => void };
 
@@ -11,23 +13,14 @@ export function PilotWorkspace({ trainerId, onLogout, isLoggingOut, onAuthentica
   isLoggingOut: boolean;
   onAuthenticationFailure: () => void;
 }) {
+  const [activeView, setActiveView] = useState<AppView>("schedule");
   return (
-    <div className="min-h-screen bg-zinc-50 text-zinc-950">
-      <header className="border-b border-zinc-200 bg-white">
-        <div className="mx-auto flex w-full max-w-5xl items-center justify-between gap-4 px-4 py-4 sm:px-6">
-          <div><p className="text-xs font-medium uppercase tracking-[0.16em] text-violet-600">Пилотный кабинет тренера</p><h1 className="mt-1 text-xl font-semibold">TrainerCRM</h1></div>
-          <button type="button" disabled={isLoggingOut} onClick={onLogout} className="min-h-11 rounded-xl border border-zinc-200 px-4 py-2 text-sm font-medium disabled:opacity-50">{isLoggingOut ? "Выходим…" : "Выйти"}</button>
-        </div>
-      </header>
-      <main className="mx-auto w-full max-w-5xl px-4 py-4 sm:px-6 sm:py-6">
-        <ServerClients key={trainerId} onAuthenticationFailure={onAuthenticationFailure} />
-        <section className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
-          <h2 className="font-semibold">Функции пилота</h2>
-          <p className="mt-1">Расписание, тренировки, упражнения, прогресс и замеры временно недоступны, пока для них не подготовлено серверное хранение.</p>
-          <p className="mt-2 text-xs text-amber-800">Прежние записи в хранилище этого браузера не удалены и не перенесены. Они не показаны в кабинете, но остаются доступны пользователю этого браузера через инструменты разработчика.</p>
-        </section>
-      </main>
-    </div>
+    <AppShell activeView={activeView} onViewChange={setActiveView} onLogout={onLogout} isLoggingOut={isLoggingOut}>
+      <div className="mx-auto w-full max-w-5xl">
+        {activeView === "schedule" && <ServerCalendar key={`calendar-${trainerId}`} onAuthenticationFailure={onAuthenticationFailure} />}
+        {activeView === "clients" && <div className="px-3 py-4 sm:px-6 sm:py-6"><header><p className="text-xs font-medium uppercase tracking-[0.16em] text-violet-600">Пилотный кабинет тренера</p><h1 className="mt-1 text-2xl font-semibold">Клиенты</h1></header><ServerClients key={`clients-${trainerId}`} onAuthenticationFailure={onAuthenticationFailure} /><section className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"><h2 className="font-semibold">Функции пилота</h2><p className="mt-1">Тренировки, упражнения, прогресс и замеры пока отключены.</p><p className="mt-2 text-xs text-amber-800">Прежние локальные записи не загружаются, не объединяются с серверными клиентами и не изменяются.</p></section></div>}
+      </div>
+    </AppShell>
   );
 }
 
@@ -192,7 +185,7 @@ export function ServerClients({ onAuthenticationFailure }: Props) {
       )}
 
       {isOpen && <div className="fixed inset-0 z-50 flex items-end bg-black/40 p-3 sm:items-center sm:justify-center" role="presentation"><div role="dialog" aria-modal="true" aria-labelledby="create-server-client-heading" className="w-full max-w-md rounded-3xl bg-white p-5 shadow-xl"><h3 id="create-server-client-heading" className="text-xl font-semibold">Новый клиент</h3><form noValidate onSubmit={submit} className="mt-4 space-y-4"><div><label htmlFor="server-client-name" className="text-sm font-medium">Имя</label><input id="server-client-name" value={name} disabled={isSubmitting} onChange={(event) => { setName(event.target.value); setFieldErrors((current) => ({ ...current, name: undefined })); }} aria-invalid={!!fieldErrors.name} className="mt-1 min-h-11 w-full rounded-xl border border-zinc-200 px-3" />{fieldErrors.name && <p role="alert" className="mt-1 text-sm text-red-600">{fieldErrors.name}</p>}</div><div><label htmlFor="server-client-weight" className="text-sm font-medium">Начальный вес, кг</label><input id="server-client-weight" type="number" inputMode="decimal" min="0.001" max="1000" step="0.001" value={weight} disabled={isSubmitting} onChange={(event) => { setWeight(event.target.value); setFieldErrors((current) => ({ ...current, startingWeight: undefined })); }} aria-invalid={!!fieldErrors.startingWeight} className="mt-1 min-h-11 w-full rounded-xl border border-zinc-200 px-3" />{fieldErrors.startingWeight && <p role="alert" className="mt-1 text-sm text-red-600">{fieldErrors.startingWeight}</p>}</div><div className="flex gap-2"><button type="button" disabled={isSubmitting} onClick={() => setIsOpen(false)} className="min-h-11 flex-1 rounded-xl border border-zinc-200 px-4">Отмена</button><button type="submit" disabled={isSubmitting} className="min-h-11 flex-1 rounded-xl bg-zinc-900 px-4 text-white disabled:opacity-40">{isSubmitting ? "Сохраняем…" : "Добавить"}</button></div></form></div></div>}
-      <p className="mt-4 text-xs text-zinc-500">Расписание и прогресс из прежнего локального режима пока не связаны с серверными клиентами.</p>
+      <p className="mt-4 text-xs text-zinc-500">Серверные UUID используются отдельно от прежних локальных записей.</p>
     </section>
   );
 }

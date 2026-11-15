@@ -1875,7 +1875,7 @@ export default function Home() {
   return (
     <AuthGate>
       {(onLogout, isLoggingOut, trainer, authenticationFailed) => (
-        <PilotWorkspace trainerId={trainer.trainerId} onLogout={onLogout} isLoggingOut={isLoggingOut} onAuthenticationFailure={authenticationFailed} />
+        <PilotWorkspace key={trainer.trainerId} trainerId={trainer.trainerId} onLogout={onLogout} isLoggingOut={isLoggingOut} onAuthenticationFailure={authenticationFailed} />
       )}
     </AuthGate>
   );

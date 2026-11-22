@@ -1,5 +1,7 @@
 import { Buffer } from "node:buffer";
 
+import { allowLoginAttempt } from "../../../../lib/server/login-rate-limit";
+
 import {
   LOGIN_BODY_MAX_BYTES,
   TRAINER_SESSION_COOKIE,
@@ -11,7 +13,7 @@ import {
 const HEADERS = { "Cache-Control": "no-store" };
 const invalid = () => Response.json({ error: "INVALID_CREDENTIALS" }, { status: 401, headers: HEADERS });
 
-export function createLoginHandler(authenticate = loginTrainer) {
+export function createLoginHandler(authenticate = loginTrainer, rateLimit = allowLoginAttempt) {
   return async function handleLogin(request: Request): Promise<Response> {
     let body: unknown;
     try {
@@ -48,6 +50,7 @@ export function createLoginHandler(authenticate = loginTrainer) {
     ) return invalid();
 
     try {
+      if (!(await rateLimit(request, body.email))) throw new TrainerAuthError("RATE_LIMITED");
       const { token, ...trainer } = await authenticate(body.email, body.password);
       const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
       return Response.json(

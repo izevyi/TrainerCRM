@@ -4,7 +4,8 @@ import { LOGIN_BODY_MAX_BYTES, TrainerAuthError } from "../../../../lib/server/t
 import { createLoginHandler } from "./handler";
 
 const loginTrainer = vi.fn();
-const POST = createLoginHandler(loginTrainer);
+const rateLimit = vi.fn();
+const POST = createLoginHandler(loginTrainer, rateLimit);
 
 const trainer = {
   trainerId: "11111111-1111-4111-8111-111111111111",
@@ -32,7 +33,11 @@ function streamingRequest(chunks: Uint8Array[], onCancel?: () => void, leaveOpen
 }
 
 describe("POST /api/auth/login", () => {
-  beforeEach(() => { loginTrainer.mockReset(); vi.unstubAllEnvs(); });
+  beforeEach(() => {
+    loginTrainer.mockReset();
+    rateLimit.mockReset().mockResolvedValue(true);
+    vi.unstubAllEnvs();
+  });
 
   it("returns safe metadata and a bounded HttpOnly development cookie", async () => {
     loginTrainer.mockResolvedValue({ ...trainer, token: "x".repeat(43) });
@@ -92,6 +97,23 @@ describe("POST /api/auth/login", () => {
     loginTrainer.mockRejectedValue(new TrainerAuthError("INVALID_CREDENTIALS"));
     const response = await POST(request(JSON.stringify({ email: "none@example.com", password: "wrong" })));
     expect(response.status).toBe(401); expect(await response.json()).toEqual({ error: "INVALID_CREDENTIALS" });
+  });
+
+  it("returns 429 without checking credentials once durable limit is reached", async () => {
+    rateLimit.mockResolvedValue(false);
+    const response = await POST(request(JSON.stringify({ email: "a@example.com", password: "secret" })));
+    expect(response.status).toBe(429);
+    expect(response.headers.get("retry-after")).toBe("60");
+    expect(await response.json()).toEqual({ error: "INVALID_CREDENTIALS" });
+    expect(loginTrainer).not.toHaveBeenCalled();
+  });
+
+  it("fails closed if the durable limiter cannot access the database", async () => {
+    rateLimit.mockRejectedValue(new Error("postgresql://private-database-url"));
+    const response = await POST(request(JSON.stringify({ email: "a@example.com", password: "secret" })));
+    expect(response.status).toBe(503);
+    expect(await response.text()).toBe('{"error":"AUTH_UNAVAILABLE"}');
+    expect(loginTrainer).not.toHaveBeenCalled();
   });
 
   it("returns generic unavailable and leaks no secret", async () => {

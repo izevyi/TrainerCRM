@@ -11,9 +11,6 @@ export const TRAINER_SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60;
 export const LOGIN_BODY_MAX_BYTES = 2_048;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const LOGIN_WINDOW_MS = 60_000;
-const LOGIN_LIMIT = 5;
-const MAX_LIMITER_KEYS = 1_000;
 
 type PasswordRow = {
   trainer_subject_id: string;
@@ -49,30 +46,6 @@ export class TrainerAuthError extends Error {
     super(code);
     this.name = "TrainerAuthError";
   }
-}
-
-type Attempt = { count: number; windowStartedAt: number };
-const attempts = new Map<string, Attempt>();
-
-// This process-local limiter is intentionally bounded and suitable only for
-// local development. Public deployment requires a shared durable rate limiter.
-export function consumeLoginAttempt(key: string, now = Date.now()): boolean {
-  const previous = attempts.get(key);
-  if (!previous || now - previous.windowStartedAt >= LOGIN_WINDOW_MS) {
-    if (!previous && attempts.size >= MAX_LIMITER_KEYS) {
-      attempts.delete(attempts.keys().next().value as string);
-    }
-    attempts.set(key, { count: 1, windowStartedAt: now });
-    return true;
-  }
-  previous.count += 1;
-  attempts.delete(key);
-  attempts.set(key, previous);
-  return previous.count <= LOGIN_LIMIT;
-}
-
-export function resetLoginAttemptsForTests(): void {
-  attempts.clear();
 }
 
 function iso(value: Date | string): string | null {
@@ -112,7 +85,6 @@ export async function loginTrainer(
   } catch {
     throw new TrainerAuthError("INVALID_CREDENTIALS");
   }
-  if (!consumeLoginAttempt(canonicalEmail)) throw new TrainerAuthError("RATE_LIMITED");
 
   try {
     const resolved = await query<PasswordRow>(

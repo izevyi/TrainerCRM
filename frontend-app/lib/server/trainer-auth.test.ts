@@ -1,13 +1,11 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { hashTrainerPassword } from "../auth/trainer-password";
 import { generateTrainerSessionToken } from "../auth/trainer-session-token";
 import type { DatabaseQuery } from "./db";
 import {
   TrainerAuthError,
-  consumeLoginAttempt,
   loginTrainer,
-  resetLoginAttemptsForTests,
   resolveTrainerSession,
   revokeTrainerSession,
 } from "./trainer-auth";
@@ -33,7 +31,6 @@ function sessionRow() {
 }
 
 describe("trainer authentication service", () => {
-  beforeEach(resetLoginAttemptsForTests);
 
   it("verifies the password before creating a parameterized digest-only session", async () => {
     const passwordHash = await hashTrainerPassword("correct horse");
@@ -101,12 +98,6 @@ describe("trainer authentication service", () => {
     const error = await loginTrainer("trainer@example.com", "password", query).catch((value) => value);
     expect(error).toBeInstanceOf(TrainerAuthError);
     expect(error).toMatchObject({ code: "UNAVAILABLE", message: "UNAVAILABLE" });
-  });
-
-  it("bounds local login attempts", () => {
-    for (let count = 0; count < 5; count += 1) expect(consumeLoginAttempt("key", 1)).toBe(true);
-    expect(consumeLoginAttempt("key", 1)).toBe(false);
-    expect(consumeLoginAttempt("key", 60_001)).toBe(true);
   });
 
   it("resolves valid sessions and rejects invalid, expired or malformed ones", async () => {

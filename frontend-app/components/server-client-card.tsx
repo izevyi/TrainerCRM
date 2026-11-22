@@ -4,8 +4,9 @@ import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import type { ServerClient } from "../lib/clients/client-api";
 import { deleteWeight, listWeights, saveWeight, type ServerWeight } from "../lib/clients/weight-api";
 import { isValidMeasurementDate } from "../lib/progress/weight-history";
-import { buildChartPoints, summarizeTrend } from "../lib/progress/chart-presentation";
+import { buildChartPoints } from "../lib/progress/chart-presentation";
 import { buildServerClientProgress } from "../lib/progress/server-client-progress";
+import { buildServerWeightTrend } from "../lib/progress/server-weight-trend";
 import { listWorkouts, type Workout } from "../lib/workouts/workout-api";
 import { ClientProgressSection } from "./client-progress-section";
 
@@ -68,10 +69,9 @@ export function ServerClientCard({ client, onClose, onAuthenticationFailure }: P
   }, [client.id]);
 
   const orderedWeights = useMemo(() => weights.slice().sort((a, b) => a.date.localeCompare(b.date)), [weights]);
-  const observations = useMemo(() => orderedWeights.map(item => ({ date: item.date, value: item.weight })), [orderedWeights]);
-  const points = useMemo(() => buildChartPoints(observations), [observations]);
-  const trend = useMemo(() => summarizeTrend(observations), [observations]);
-  const latestWeight = orderedWeights.at(-1)?.weight ?? client.startingWeight;
+  const bodyWeightTrend = useMemo(() => buildServerWeightTrend(client.startingWeight, orderedWeights), [client.startingWeight, orderedWeights]);
+  const points = useMemo(() => buildChartPoints(bodyWeightTrend.observations), [bodyWeightTrend]);
+  const latestWeight = bodyWeightTrend.latestWeight;
   const completed = workouts.filter(item => item.completed);
   const progress = useMemo(() => buildServerClientProgress(workouts), [workouts]);
 
@@ -135,7 +135,7 @@ export function ServerClientCard({ client, onClose, onAuthenticationFailure }: P
               <div className="rounded-xl bg-zinc-50 p-4"><p className="text-xs text-zinc-500">Последний вес</p><p className="mt-1 text-lg font-semibold">{shownWeight(latestWeight)}</p></div>
               <div className="rounded-xl bg-zinc-50 p-4"><p className="text-xs text-zinc-500">Завершено тренировок</p><p className="mt-1 text-lg font-semibold">{completed.length}</p></div>
             </div>
-            <p className="text-sm text-zinc-600">Начальный вес — исходная точка без даты, не отдельное измерение. Для графика добавь взвешивания во вкладке «Прогресс».</p>
+            <p className="text-sm text-zinc-600">Начальный вес учитывается в графике как точка «Старт» без даты. Для сравнения достаточно одного последующего взвешивания.</p>
             {completed.length > 0 && <p className="text-sm text-zinc-600">Последняя завершённая тренировка: {shownDate(completed.slice().sort((a,b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time)).at(-1)!.date)}</p>}
           </div>
         )}
@@ -164,18 +164,21 @@ export function ServerClientCard({ client, onClose, onAuthenticationFailure }: P
               </form>
               {editId && <button type="button" onClick={resetForm} disabled={busy} className="mt-2 min-h-11 text-sm text-zinc-600 underline">Отменить изменение</button>}
               {formError && <p role="alert" className="mt-2 text-sm text-red-600">{formError}</p>}
-              {trend.count === 0 ? <p className="mt-4 text-sm text-zinc-500">Пока нет взвешиваний.</p> : (
+              {bodyWeightTrend.measurementCount === 0 ? <p className="mt-4 text-sm text-zinc-500">Начальный вес: {shownWeight(client.startingWeight)}. Добавь первое взвешивание, чтобы увидеть изменение.</p> : (
                 <figure className="mt-4 rounded-xl bg-zinc-50 p-3">
-                  <figcaption className="text-sm text-zinc-600">{trend.count === 1 ? "Для динамики нужно хотя бы два измерения." : `Изменение веса: ${shownWeight(trend.first!.value)} → ${shownWeight(trend.latest!.value)} (${trend.delta! > 0 ? "+" : ""}${shownWeight(trend.delta!)}).`}</figcaption>
-                  <svg viewBox="0 0 640 180" className="mt-3 h-40 w-full" role="img" aria-label="График изменения веса">
+                  <figcaption className="text-sm text-zinc-600">Изменение относительно старта: {shownWeight(client.startingWeight)} → {shownWeight(bodyWeightTrend.latestWeight)} ({bodyWeightTrend.delta > 0 ? "+" : ""}{bodyWeightTrend.delta.toLocaleString("ru-RU", { maximumFractionDigits: 3 })} кг).</figcaption>
+                  <svg viewBox="0 0 640 180" className="mt-3 h-40 w-full" role="img" aria-label="График изменения веса от начального значения">
                     <line x1="20" y1="90" x2="620" y2="90" stroke="currentColor" className="text-zinc-200" />
                     {points.length > 1 && <polyline points={points.map(point => `${point.x},${point.y}`).join(" ")} stroke="currentColor" strokeWidth="4" fill="none" className="text-zinc-900" />}
-                    {points.map(point => <circle key={point.index} cx={point.x} cy={point.y} r="5" fill="currentColor" className="text-zinc-900" />)}
+                    {points.map(point => <circle key={point.index} cx={point.x} cy={point.y} r="5" fill="currentColor" className={point.index === 0 ? "text-violet-600" : "text-zinc-900"} />)}
                   </svg>
-                  <div className="mt-1 flex justify-between text-xs text-zinc-500"><span>{shownDate(orderedWeights[0].date)}</span><span>{shownDate(orderedWeights.at(-1)!.date)}</span></div>
+                  <div className="mt-1 flex justify-between text-xs text-zinc-500"><span>Старт (без даты)</span><span>{shownDate(bodyWeightTrend.latestDate!)}</span></div>
                 </figure>
               )}
               <ul className="mt-4 space-y-2">
+                <li className="flex flex-wrap items-center gap-2 rounded-xl border border-violet-100 bg-violet-50 p-2 text-sm">
+                  <span className="text-zinc-500">Старт (без даты)</span><span className="mr-auto font-medium">{shownWeight(client.startingWeight)}</span><span className="text-xs text-zinc-500">Исходный вес</span>
+                </li>
                 {orderedWeights.map(item => <li key={item.id} className="flex flex-wrap items-center gap-2 rounded-xl border border-zinc-100 p-2 text-sm">
                   <span className="text-zinc-500">{shownDate(item.date)}</span><span className="mr-auto font-medium">{shownWeight(item.weight)}</span>
                   <button type="button" disabled={busy} className="min-h-11 px-2 text-violet-700" onClick={() => { setEditId(item.id); setDate(item.date); setWeight(String(item.weight)); setFormError(null); }}>Изменить</button>

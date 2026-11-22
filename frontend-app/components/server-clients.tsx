@@ -5,6 +5,7 @@ import { listClients, postClient, type ServerClient } from "../lib/clients/clien
 import { AppShell, type AppView } from "./app-shell";
 import { ServerCalendar } from "./server-calendar";
 import { ServerWorkouts } from "./server-workouts";
+import { ServerClientCard } from "./server-client-card";
 
 type Props = { onAuthenticationFailure: () => void };
 
@@ -35,6 +36,7 @@ export function ServerClients({ onAuthenticationFailure }: Props) {
   const requestGenerationRef = useRef(0);
   const controllersRef = useRef(new Set<AbortController>());
   const [clients, setClients] = useState<ServerClient[]>([]);
+  const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [message, setMessage] = useState<string | null>(null);
   const [isErrorMessage, setIsErrorMessage] = useState(false);
@@ -181,10 +183,12 @@ export function ServerClients({ onAuthenticationFailure }: Props) {
       {status === "ready" && clients.length === 0 && <p className="mt-4 rounded-xl bg-zinc-50 p-4 text-sm text-zinc-500">Клиентов пока нет. Добавьте первого клиента.</p>}
       {status === "ready" && clients.length > 0 && (
         <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-          {filtered.map((client) => <article key={client.id} className="flex items-center gap-3 rounded-2xl border border-zinc-200 p-3"><div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-zinc-900 text-sm font-semibold text-white">{client.name.split(" ").map((part) => part[0]).slice(0, 2).join("")}</div><div className="min-w-0"><div className="truncate text-sm font-semibold">{client.name}</div><div className="mt-0.5 text-xs text-zinc-500">Начальный вес: {client.startingWeight} кг</div></div></article>)}
+          {filtered.map((client) => <button type="button" key={client.id} onClick={() => setSelectedClientId(client.id)} aria-label={`Открыть карточку: ${client.name}`} className="flex min-h-16 items-center gap-3 rounded-2xl border border-zinc-200 p-3 text-left hover:bg-zinc-50 focus-visible:outline-2 focus-visible:outline-violet-500"><div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-zinc-900 text-sm font-semibold text-white">{client.name.split(" ").map((part) => part[0]).slice(0, 2).join("")}</div><div className="min-w-0"><div className="truncate text-sm font-semibold">{client.name}</div><div className="mt-0.5 text-xs text-zinc-500">Начальный вес: {client.startingWeight} кг</div></div></button>)}
           {filtered.length === 0 && <p className="text-sm text-zinc-500">По вашему запросу ничего не найдено.</p>}
         </div>
       )}
+
+      {selectedClientId && clients.some(client => client.id === selectedClientId) && <ServerClientCard key={selectedClientId} client={clients.find(client => client.id === selectedClientId)!} onClose={() => setSelectedClientId(null)} onAuthenticationFailure={onAuthenticationFailure} />}
 
       {isOpen && <div className="fixed inset-0 z-50 flex items-end bg-black/40 p-3 sm:items-center sm:justify-center" role="presentation"><div role="dialog" aria-modal="true" aria-labelledby="create-server-client-heading" className="w-full max-w-md rounded-3xl bg-white p-5 shadow-xl"><h3 id="create-server-client-heading" className="text-xl font-semibold">Новый клиент</h3><form noValidate onSubmit={submit} className="mt-4 space-y-4"><div><label htmlFor="server-client-name" className="text-sm font-medium">Имя</label><input id="server-client-name" value={name} disabled={isSubmitting} onChange={(event) => { setName(event.target.value); setFieldErrors((current) => ({ ...current, name: undefined })); }} aria-invalid={!!fieldErrors.name} className="mt-1 min-h-11 w-full rounded-xl border border-zinc-200 px-3" />{fieldErrors.name && <p role="alert" className="mt-1 text-sm text-red-600">{fieldErrors.name}</p>}</div><div><label htmlFor="server-client-weight" className="text-sm font-medium">Начальный вес, кг</label><input id="server-client-weight" type="number" inputMode="decimal" min="0.001" max="1000" step="0.001" value={weight} disabled={isSubmitting} onChange={(event) => { setWeight(event.target.value); setFieldErrors((current) => ({ ...current, startingWeight: undefined })); }} aria-invalid={!!fieldErrors.startingWeight} className="mt-1 min-h-11 w-full rounded-xl border border-zinc-200 px-3" />{fieldErrors.startingWeight && <p role="alert" className="mt-1 text-sm text-red-600">{fieldErrors.startingWeight}</p>}</div><div className="flex gap-2"><button type="button" disabled={isSubmitting} onClick={() => setIsOpen(false)} className="min-h-11 flex-1 rounded-xl border border-zinc-200 px-4">Отмена</button><button type="submit" disabled={isSubmitting} className="min-h-11 flex-1 rounded-xl bg-zinc-900 px-4 text-white disabled:opacity-40">{isSubmitting ? "Сохраняем…" : "Добавить"}</button></div></form></div></div>}
       <p className="mt-4 text-xs text-zinc-500">Серверные UUID используются отдельно от прежних локальных записей.</p>

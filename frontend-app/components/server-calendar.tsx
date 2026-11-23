@@ -4,8 +4,10 @@ import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } fro
 import { listClients, type ServerClient } from "../lib/clients/client-api";
 import { cancelAppointment, createAppointment, listAppointments, rescheduleAppointment, type AppointmentErrorKind, type ServerAppointment } from "../lib/appointments/appointment-api";
 import { appointmentRanges, localDateKey, localDateTimeFields, monthGrid, monthNames, resolveLocalDateTime, weekDays } from "../lib/appointments/calendar-date";
+import type { AppointmentWorkoutTarget } from "../lib/workouts/appointment-navigation";
+import { appointmentHistory, type HistoryFilter } from "../lib/appointments/appointment-history";
 
-type Props = { onAuthenticationFailure: () => void };
+type Props = { onAuthenticationFailure: () => void; onOpenWorkout?: (appointment: AppointmentWorkoutTarget) => void };
 type LoadStatus = "loading" | "ready" | "error";
 
 const messages: Record<Exclude<AppointmentErrorKind, "aborted">, string> = {
@@ -32,7 +34,7 @@ function durationText(item: ServerAppointment) {
   return `${minutes} мин`;
 }
 
-export function ServerCalendar({ onAuthenticationFailure }: Props) {
+export function ServerCalendar({ onAuthenticationFailure, onOpenWorkout }: Props) {
   const today = useMemo(() => new Date(), []);
   const [month, setMonth] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1));
   const [selectedDate, setSelectedDate] = useState(today);
@@ -49,6 +51,7 @@ export function ServerCalendar({ onAuthenticationFailure }: Props) {
   const [endTime, setEndTime] = useState("10:00");
   const [saving, setSaving] = useState(false);
   const [confirmCancellation, setConfirmCancellation] = useState(false);
+  const [historyFilter, setHistoryFilter] = useState<HistoryFilter>("all");
   const mountedRef = useRef(false);
   const generationRef = useRef(0);
   const controllersRef = useRef(new Set<AbortController>());
@@ -162,6 +165,8 @@ export function ServerCalendar({ onAuthenticationFailure }: Props) {
 
   const active = appointments.filter((item) => item.status === "active");
   const selected = active.filter((item) => localDateKey(new Date(item.startsAt)) === localDateKey(selectedDate));
+  const history = appointmentHistory(appointments, month, new Date());
+  const visibleHistory = history.filter((item) => historyFilter === "all" || item.historyStatus === historyFilter);
 
   return <div className="px-3 py-4 sm:px-6 sm:py-6">
     <header className="flex flex-wrap items-end justify-between gap-3">
@@ -188,11 +193,51 @@ export function ServerCalendar({ onAuthenticationFailure }: Props) {
 
     <section className="mt-6" aria-labelledby="selected-schedule"><div className="flex items-end justify-between gap-2"><div><p className="text-xs text-zinc-500">Расписание</p><h2 id="selected-schedule" className="mt-1 text-xl font-semibold">{selectedDate.toLocaleDateString("ru-RU", { day: "numeric", month: "long" })}</h2></div><span className="text-xs text-zinc-500">{selected.length} записей</span></div>
       {status === "ready" && selected.length === 0 && <div className="mt-3 rounded-2xl bg-white p-7 text-center shadow-sm ring-1 ring-zinc-200"><p className="text-sm font-medium">Записей нет</p><p className="mt-1 text-xs text-zinc-500">Выберите клиента и добавьте запись</p></div>}
-      <div className="mt-3 space-y-2">{selected.map((item) => <button key={item.id} type="button" onClick={() => showEditor(item)} className="flex w-full items-center gap-3 rounded-2xl bg-white p-3 text-left shadow-sm ring-1 ring-zinc-200 sm:p-4"><span className="w-12 shrink-0 text-sm font-semibold sm:w-16 sm:text-lg">{timeValue(item.startsAt)}</span><span className="h-9 w-px bg-zinc-200" /><span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold sm:text-base">{item.clientName ?? clients.find((client) => client.id === item.clientId)?.name ?? "Клиент"}</span><span className="mt-0.5 block text-xs text-zinc-500">Персональная тренировка · {durationText(item)}</span></span><span aria-hidden="true" className="text-zinc-300">→</span></button>)}</div>
+      <div className="mt-3 space-y-2">{selected.map((item) => <div key={item.id} className="flex items-stretch gap-2 rounded-2xl bg-white p-2 shadow-sm ring-1 ring-zinc-200 sm:p-3">
+        <button type="button" onClick={() => showEditor(item)} className="flex min-w-0 flex-1 items-center gap-3 rounded-xl p-1 text-left hover:bg-zinc-50">
+          <span className="w-12 shrink-0 text-sm font-semibold sm:w-16 sm:text-lg">{timeValue(item.startsAt)}</span>
+          <span className="h-9 w-px bg-zinc-200" />
+          <span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold sm:text-base">{item.clientName ?? clients.find((client) => client.id === item.clientId)?.name ?? "Клиент"}</span><span className="mt-0.5 block text-xs text-zinc-500">Персональная тренировка · {durationText(item)}</span></span>
+        </button>
+        {onOpenWorkout && <button type="button" onClick={() => onOpenWorkout(item)} className="min-h-11 shrink-0 rounded-xl bg-violet-50 px-3 text-xs font-semibold text-violet-800 hover:bg-violet-100 sm:text-sm">К тренировке</button>}
+      </div>)}</div>
+    </section>
+
+    <section aria-labelledby="appointment-history-heading" className="mt-7 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-zinc-200 sm:mt-8 sm:rounded-3xl sm:p-5">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h2 id="appointment-history-heading" className="text-xl font-semibold">История записей</h2>
+          <p className="mt-1 text-xs text-zinc-500">За {monthNames[month.getMonth()].toLowerCase()} {month.getFullYear()} года · {history.length} записей</p>
+        </div>
+        <div className="flex flex-wrap gap-1.5" role="group" aria-label="Фильтр истории записей">
+          {([ ["all", "Все"], ["past", "Прошедшие"], ["cancelled", "Отменённые"] ] as const).map(([value, label]) => (
+            <button key={value} type="button" aria-pressed={historyFilter === value} onClick={() => setHistoryFilter(value)} className={`min-h-10 rounded-xl px-3 text-xs font-medium sm:text-sm ${historyFilter === value ? "bg-zinc-900 text-white" : "bg-zinc-100 text-zinc-700 hover:bg-zinc-200"}`}>{label}</button>
+          ))}
+        </div>
+      </div>
+      <p className="mt-3 text-xs text-zinc-500">Прошедшая запись — это время, которое закончилось. Она не обязательно означает, что тренировка состоялась. Для другого месяца переключите календарь выше.</p>
+      {status === "ready" && visibleHistory.length === 0 && <p className="mt-4 rounded-xl bg-zinc-50 p-4 text-sm text-zinc-500">За выбранный месяц записей с таким статусом нет.</p>}
+      {status === "ready" && visibleHistory.length > 0 && (
+        <div className="mt-4 space-y-2">
+          {visibleHistory.map((item) => (
+            <article key={item.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-zinc-200 p-3">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold">{item.clientName ?? clients.find((client) => client.id === item.clientId)?.name ?? "Клиент"}</p>
+                <p className="mt-1 text-xs text-zinc-500">{new Date(item.startsAt).toLocaleDateString("ru-RU", { day: "numeric", month: "long" })} · {timeValue(item.startsAt)}–{timeValue(item.endsAt)}</p>
+                {item.historyStatus === "cancelled" && item.cancelledAt && <p className="mt-1 text-xs text-zinc-500">Отменена {new Date(item.cancelledAt).toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" })}</p>}
+              </div>
+              <span className={`rounded-lg px-2.5 py-1.5 text-xs font-semibold ${item.historyStatus === "cancelled" ? "bg-amber-50 text-amber-800" : "bg-zinc-100 text-zinc-700"}`}>
+                {item.historyStatus === "cancelled" ? "Отменена" : "Время прошло"}
+              </span>
+            </article>
+          ))}
+        </div>
+      )}
     </section>
 
     {editing && <div className="fixed inset-0 z-50 flex items-end bg-black/40 p-3 sm:items-center sm:justify-center" role="presentation"><div role="dialog" aria-modal="true" aria-labelledby="appointment-editor-title" className="w-full max-w-md rounded-3xl bg-white p-5 shadow-xl"><div className="flex items-center justify-between"><div><p className="text-xs text-zinc-500">Дата и время записи</p><h2 id="appointment-editor-title" className="mt-1 text-xl font-semibold">{editing === "new" ? "Новая запись" : "Изменить запись"}</h2></div><button type="button" aria-label="Закрыть" disabled={saving} onClick={() => setEditing(null)} className="h-11 w-11 rounded-xl text-xl text-zinc-400">×</button></div>
       <form noValidate onSubmit={save} className="mt-5 space-y-4"><div><label htmlFor="appointment-client" className="text-sm font-medium">Клиент</label><select id="appointment-client" value={clientId} disabled={saving || editing !== "new"} onChange={(event) => setClientId(event.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-zinc-200 px-3"><option value="">Выберите клиента</option>{clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}</select></div><fieldset><legend className="text-sm font-medium">Начало</legend><div className="mt-1 grid grid-cols-2 gap-3"><input aria-label="Дата начала" type="date" value={startDate} disabled={saving} onChange={(event) => setStartDate(event.target.value)} className="min-h-11 w-full rounded-xl border border-zinc-200 px-3" /><input aria-label="Время начала" type="time" value={startTime} disabled={saving} onChange={(event) => setStartTime(event.target.value)} className="min-h-11 w-full rounded-xl border border-zinc-200 px-3" /></div></fieldset><fieldset><legend className="text-sm font-medium">Окончание</legend><div className="mt-1 grid grid-cols-2 gap-3"><input aria-label="Дата окончания" type="date" value={endDate} disabled={saving} onChange={(event) => setEndDate(event.target.value)} className="min-h-11 w-full rounded-xl border border-zinc-200 px-3" /><input aria-label="Время окончания" type="time" value={endTime} disabled={saving} onChange={(event) => setEndTime(event.target.value)} className="min-h-11 w-full rounded-xl border border-zinc-200 px-3" /></div></fieldset><p className="text-xs text-zinc-500">Время указано в зоне {timezone}.</p><div className="flex gap-2"><button type="button" disabled={saving} onClick={() => setEditing(null)} className="min-h-11 flex-1 rounded-xl border border-zinc-200 px-4">Закрыть</button><button type="submit" disabled={saving} className="min-h-11 flex-1 rounded-xl bg-zinc-900 px-4 text-white disabled:opacity-40">{saving ? "Сохраняем…" : editing === "new" ? "Создать" : "Сохранить"}</button></div></form>
+      {editing !== "new" && onOpenWorkout && <button type="button" disabled={saving} onClick={() => onOpenWorkout(editing)} className="mt-4 min-h-11 w-full rounded-xl bg-violet-50 px-4 text-sm font-semibold text-violet-800">Открыть тренировку клиента</button>}
       {editing !== "new" && (confirmCancellation ? <section className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4"><h3 className="font-semibold text-amber-950">Отменить запись?</h3><p className="mt-1 text-sm text-amber-900">Запись не удаляется: сервер сохранит её со статусом «отменена».</p><div className="mt-3 flex gap-2"><button type="button" disabled={saving} onClick={() => setConfirmCancellation(false)} className="min-h-11 flex-1 rounded-xl border border-zinc-200 bg-white px-3">Не отменять</button><button type="button" disabled={saving} onClick={() => void cancel()} className="min-h-11 flex-1 rounded-xl bg-amber-700 px-3 text-white">{saving ? "Отменяем…" : "Отменить запись"}</button></div></section> : <button type="button" onClick={() => setConfirmCancellation(true)} className="mt-4 min-h-11 w-full rounded-xl bg-amber-50 px-4 text-sm font-medium text-amber-800">Отменить запись</button>)}</div></div>}
   </div>;
 }

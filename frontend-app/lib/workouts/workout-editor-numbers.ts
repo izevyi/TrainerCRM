@@ -28,3 +28,15 @@ export function workoutNumberError(field: WorkoutNumberField): string {
     ? "Введите вес целыми или половинами килограмма, например 50 или 50,5."
     : "Введите целое количество повторений.";
 }
+
+/** Change a valid workout number by one editor step, without rounding invalid input. */
+export function stepWorkoutNumber(field: WorkoutNumberField, draft: string, direction: -1 | 1): string | null {
+  const value = parseWorkoutNumber(field, draft);
+  if (value === null) return null;
+  // Work in integer units to avoid floating-point rounding drift.
+  const scaled = field === "weight" ? value * 2 : value;
+  const maximum = field === "weight" ? 2000 : 10000;
+  const next = scaled + direction;
+  if (next < 0 || next > maximum) return null;
+  return field === "weight" ? formatWorkoutWeight(next / 2) : String(next);
+}

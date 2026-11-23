@@ -3,6 +3,7 @@ import { validRegistrationPassword } from "../../../../lib/registration/registra
 import { limitedJsonBody, allowedRegistrationOrigin } from "../../../../lib/server/registration-http";
 import { sendRegistrationEmail } from "../../../../lib/server/registration-mail";
 import { allowRegistrationAttempt } from "../../../../lib/server/registration-rate-limit";
+import { registrationEmailAllowed } from "../../../../lib/server/registration-access";
 import { beginTrainerRegistration, RegistrationError } from "../../../../lib/server/trainer-registration";
 
 const HEADERS = { "Cache-Control":"no-store" };
@@ -33,6 +34,9 @@ export function createRegisterHandler(
       password = body.password;
     } catch { return invalid(); }
     try {
+      // Default-deny: the pilot can only register the approved email.
+      // This check runs on the server and cannot be bypassed by the UI.
+      if (!registrationEmailAllowed(email)) return unavailable();
       if (!(await rate(request,email))) {
         return Response.json({ error:"RATE_LIMITED" }, {
           status:429, headers:{ ...HEADERS,"Retry-After":"60" },

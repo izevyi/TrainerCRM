@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createRegisterHandler } from "./handler";
 
 const begin = vi.fn();
@@ -10,7 +10,30 @@ function request(input: unknown) {
 }
 
 describe("POST /api/auth/register", () => {
-  beforeEach(() => { begin.mockReset(); rate.mockReset().mockResolvedValue(true); send.mockReset().mockResolvedValue(undefined); });
+  beforeEach(() => {
+    vi.stubEnv("TRAINERCRM_REGISTRATION_MODE", "public");
+    begin.mockReset(); rate.mockReset().mockResolvedValue(true); send.mockReset().mockResolvedValue(undefined);
+  });
+  afterEach(() => vi.unstubAllEnvs());
+  it("defaults closed when registration mode is absent", async () => {
+    vi.stubEnv("TRAINERCRM_REGISTRATION_MODE", "");
+    const response = await POST(request({email:"trainer@example.com",password:"abcdefgh"}));
+    expect(response.status).toBe(503);
+    expect(begin).not.toHaveBeenCalled();
+    expect(rate).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
+  });
+  it("only permits the preapproved pilot mailbox", async () => {
+    vi.stubEnv("TRAINERCRM_REGISTRATION_MODE", "pilot");
+    vi.stubEnv("TRAINERCRM_REGISTRATION_PILOT_EMAIL", "Test.Trainer@example.com");
+    const denied = await POST(request({email:"someone@example.com",password:"abcdefgh"}));
+    expect(denied.status).toBe(503);
+    expect(begin).not.toHaveBeenCalled();
+    expect(rate).not.toHaveBeenCalled();
+    const allowed = await POST(request({email:"test.trainer@example.com",password:"abcdefgh"}));
+    expect(allowed.status).toBe(202);
+    expect(begin).toHaveBeenCalledWith("test.trainer@example.com","abcdefgh");
+  });
   it("enqueues a confirmation and never returns the token", async () => {
     begin.mockResolvedValue({email:"trainer@example.com",token:"X".repeat(43)});
     const res = await POST(request({email:"Trainer@example.com",password:"strong-pass"}));

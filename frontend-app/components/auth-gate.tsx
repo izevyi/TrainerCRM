@@ -2,6 +2,7 @@
 
 import { type FormEvent, type ReactNode, useEffect, useRef, useState } from "react";
 import { login, logout, verifySession, type TrainerSession } from "../lib/auth/client-auth";
+import { TrainerRegistration } from "./trainer-registration";
 
 type AuthState =
   | { status: "checking" }
@@ -23,6 +24,11 @@ function validate(email: string, password: string): Errors {
 
 export function AuthGate({ children }: { children: (logoutAction: () => void, isLoggingOut: boolean, trainer: TrainerSession, authenticationFailed: () => void) => ReactNode }) {
   const [auth, setAuth] = useState<AuthState>({ status: "checking" });
+  const [registerMode, setRegisterMode] = useState(() =>
+    typeof window !== "undefined" && window.location.hash.startsWith("#verify="));
+  const [verificationToken, setVerificationToken] = useState<string | null>(() =>
+    typeof window === "undefined" ? null :
+      new URLSearchParams(window.location.hash.slice(1)).get("verify"));
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [errors, setErrors] = useState<Errors>({});
@@ -37,6 +43,11 @@ export function AuthGate({ children }: { children: (logoutAction: () => void, is
 
   useEffect(() => {
     mountedRef.current = true;
+    const hash = window.location.hash;
+    if (hash.startsWith("#verify=")) {
+      // Tokens are never sent in HTTP URLs; remove from browser history too.
+      window.history.replaceState(window.history.state, "", window.location.pathname + window.location.search);
+    }
     const generation = ++sessionGenerationRef.current;
     let active = true;
     void verifySession().then((result) => {
@@ -151,6 +162,12 @@ export function AuthGate({ children }: { children: (logoutAction: () => void, is
     );
   }
 
+  if (registerMode) {
+    return <TrainerRegistration verificationToken={verificationToken} onBack={() => {
+      setRegisterMode(false); setVerificationToken(null);
+    }} />;
+  }
+
   if (auth.status === "authenticated") {
     const generation = auth.generation;
     const trainerId = auth.trainer.trainerId;
@@ -183,6 +200,10 @@ export function AuthGate({ children }: { children: (logoutAction: () => void, is
           {errors.form && <p className="auth-form-error" role="alert">{errors.form}</p>}
           <button type="submit" disabled={isSubmitting}>{isSubmitting ? "Входим…" : "Войти"}</button>
         </form>
+        <button type="button" className="mt-4 w-full min-h-11 rounded-xl border border-zinc-200 px-4 text-sm"
+          onClick={() => { setVerificationToken(null); setRegisterMode(true); }}>
+          Создать аккаунт тренера
+        </button>
       </section>
     </main>
   );

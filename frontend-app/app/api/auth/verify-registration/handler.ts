@@ -1,10 +1,10 @@
 import { allowedRegistrationOrigin, limitedJsonBody } from "../../../../lib/server/registration-http";
 import { verifyTrainerRegistration, RegistrationError } from "../../../../lib/server/trainer-registration";
-import { allowRegistrationAttempt } from "../../../../lib/server/registration-rate-limit";
+import { allowRegistrationVerificationAttempt } from "../../../../lib/server/registration-rate-limit";
 
 const HEADERS = { "Cache-Control":"no-store" };
 
-export function createVerifyRegistrationHandler(verify = verifyTrainerRegistration, rate = allowRegistrationAttempt) {
+export function createVerifyRegistrationHandler(verify = verifyTrainerRegistration, rate = allowRegistrationVerificationAttempt) {
   return async function POST(request: Request): Promise<Response> {
     if (!allowedRegistrationOrigin(request)) {
       return Response.json({ error:"INVALID_TOKEN" }, { status:400, headers:HEADERS });
@@ -20,7 +20,7 @@ export function createVerifyRegistrationHandler(verify = verifyTrainerRegistrati
       return Response.json({ error:"INVALID_TOKEN" }, { status:400, headers:HEADERS });
     }
     try {
-      if (!(await rate(request,"verify@trainer-crm.ru"))) {
+      if (!(await rate(request))) {
         return Response.json({ error:"RATE_LIMITED" }, { status:429, headers:{ ...HEADERS,"Retry-After":"60" } });
       }
       if (await verify(token)) {
